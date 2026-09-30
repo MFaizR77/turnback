@@ -9,6 +9,7 @@ export interface TurnStats {
   created: number;
   modified: number;
   deleted: number;
+  deletedByAgent: Record<string, number>;
   commands: number;
   /** Restores and undos, not redos. */
   restores: number;
@@ -23,7 +24,7 @@ export function turnStats(store: Store, days = 7, now = Date.now()): TurnStats {
   const recent = (time: string) => Date.parse(time) >= cutoff && Date.parse(time) <= now;
   const stats: TurnStats = {
     days, since: new Date(cutoff).toISOString(), turns: 0, byAgent: {},
-    created: 0, modified: 0, deleted: 0, commands: 0, restores: 0, restoredFiles: 0,
+    created: 0, modified: 0, deleted: 0, deletedByAgent: {}, commands: 0, restores: 0, restoredFiles: 0,
   };
   for (const turn of store.turns()) {
     if (!recent(turn.time)) continue;
@@ -33,7 +34,10 @@ export function turnStats(store: Store, days = 7, now = Date.now()): TurnStats {
     if (!turn.end) continue;
     for (const change of store.repo.diffNameStatus(turn.baseline, turn.end)) {
       if (change.status === 'A') stats.created++;
-      else if (change.status === 'D') stats.deleted++;
+      else if (change.status === 'D') {
+        stats.deleted++;
+        stats.deletedByAgent[turn.agent] = (stats.deletedByAgent[turn.agent] ?? 0) + 1;
+      }
       else stats.modified++;
     }
   }
@@ -68,7 +72,11 @@ export function statsCard(s: TurnStats): string {
   const period = s.days === 7 ? 'this week' : `in the last ${count(s.days, 'day')}`;
   // `turnback run` turns are commands the user ran, not an agent's work.
   const who = s.turns && Object.keys(s.byAgent).every(a => a === 'manual') ? 'Commands' : 'Agents';
-  const headline = `${who} deleted ${count(s.deleted, 'file')} ${period}.`;
+  const agentDeleted = s.deletedByAgent
+    ? Object.entries(s.deletedByAgent).filter(([a]) => a !== 'manual').reduce((sum, [, n]) => sum + n, 0)
+    : s.deleted;
+  const deletedCount = who === 'Commands' ? (s.deletedByAgent?.manual ?? s.deleted) : agentDeleted;
+  const headline = `${who} deleted ${count(deletedCount, 'file')} ${period}.`;
   const saved = s.restoredFiles ? `Turnback brought back ${count(s.restoredFiles, 'file')}.` : 'Nothing needed undoing.';
   const detail = `${count(s.turns, 'turn')} (${agents(s) || 'no agents'}) · ${s.created} created · ${s.modified} changed · ${count(s.commands, 'shell command')}`;
   const font = `font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace"`;

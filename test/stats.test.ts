@@ -59,3 +59,25 @@ it('does not claim anything was kept when nothing was restored', () => {
   expect(card).not.toContain('kept a copy');
   expect(card).toContain('Nothing needed undoing.');
 });
+
+it('counts only agent deletions in the headline when turns are mixed', () => {
+  const p = tempProject('turnback-stats-mix-');
+  p.write('a.txt', 'a');
+  p.write('b.txt', 'b');
+  hook(p.root, 'turn-start', 't1', { agent: 'manual' });
+  hook(p.root, 'shell', 't1', { agent: 'manual', command: 'rm a.txt' });
+  rmSync(p.file('a.txt'));
+  hook(p.root, 'turn-end', 't1', { agent: 'manual' });
+
+  hook(p.root, 'turn-start', 't2', { agent: 'codex' });
+  hook(p.root, 'shell', 't2', { agent: 'codex', command: 'rm b.txt' });
+  rmSync(p.file('b.txt'));
+  hook(p.root, 'turn-end', 't2', { agent: 'codex' });
+
+  const store = new Store(p.root);
+  const s = turnStats(store, 7);
+  expect(s.deleted).toBe(2);
+  expect(s.deletedByAgent).toEqual({ manual: 1, codex: 1 });
+  expect(statsCard(s)).toContain('Agents deleted 1 file this week.');
+});
+
