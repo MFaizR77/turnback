@@ -138,6 +138,29 @@ it('prints usage and exits 2 for an unknown command', () => {
   expect(r.stdout).toMatch(/Usage:/);
 });
 
+it('rejects invalid UI port values before starting a server', () => {
+  const p = tempProject('turnback-port-cli-');
+  for (const value of ['abc', 'NaN', 'Infinity', '-1', '65536', '1.5', '', ' ', undefined]) {
+    const result = spawnSync(process.execPath, [CLI, 'ui', '--no-open', '--port', ...value === undefined ? [] : [value]], {
+      cwd: p.root, encoding: 'utf8', env: { ...process.env, TURNBACK_HOME: p.home }, windowsHide: true, timeout: 3000,
+    });
+    expect(result.status, `--port ${JSON.stringify(value)}`).toBe(2);
+    expect(result.stderr).toContain('--port must be a whole number from 0 to 65535');
+    expect(result.stdout).not.toContain('Turnback UI:');
+  }
+}, 30_000);
+
+it('rejects invalid step numbers before looking up a restore target', () => {
+  const p = tempProject('turnback-step-value-cli-');
+  p.write('a.txt', 'unchanged');
+  for (const value of ['abc', 'NaN', 'Infinity', '-1', '0', '1.5', '9007199254740992', '', ' ', undefined]) {
+    const result = cli(p.root, p.home, ['restore', 'missing', '--yes', '--before-step', ...value === undefined ? [] : [value]]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('--before-step must be a step number from turnback steps <turn>');
+    expect(p.read('a.txt')).toBe('unchanged');
+  }
+});
+
 it('lists steps and restores to just before one', () => {
   const p = tempProject('turnback-steps-cli-');
   p.write('a.txt', 'v0');
