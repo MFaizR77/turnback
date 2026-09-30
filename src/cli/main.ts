@@ -267,6 +267,7 @@ async function main(): Promise<void> {
       if (range !== undefined) {
         const m = /^(\d+),(\d+)$/.exec(range);
         if (!m || Number(m[1]) < 1 || Number(m[1]) > Number(m[2])) throw new Error('-L needs <start>,<end> with 1 ≤ start ≤ end');
+        if (lines.length && Number(m[1]) > lines.length) throw new Error(`${file} has ${lines.length} ${lines.length === 1 ? 'line' : 'lines'}`);
         lines = lines.filter(l => l.line >= Number(m[1]) && l.line <= Number(m[2]));
       }
       if (args.flags.has('--json')) {
