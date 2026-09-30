@@ -260,6 +260,30 @@ it('blames a file through the CLI, with a line range and JSON', () => {
   expect(gone.stderr).toContain('turnback recover nope.txt');
 }, 30_000);
 
+it('reports a blame range beyond the file without calling a nonempty file empty', () => {
+  const p = tempProject('turnback-blame-range-');
+  p.write('f.txt', 'a\nb\nc\n');
+  for (const extra of [[], ['--json']]) {
+    const result = cli(p.root, p.home, ['blame', 'f.txt', '-L', '4,20', ...extra]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('f.txt has 3 lines');
+    expect(result.stdout).toBe('');
+  }
+  const partial = cli(p.root, p.home, ['blame', 'f.txt', '-L', '3,20', '--json']);
+  expect(partial.status).toBe(0);
+  expect(JSON.parse(partial.stdout)).toEqual([{ line: 3, text: 'c', source: 'before' }]);
+  p.write('one.txt', 'one');
+  const single = cli(p.root, p.home, ['blame', 'one.txt', '-L', '2,2']);
+  expect(single.status).toBe(2);
+  expect(single.stderr).toContain('one.txt has 1 line');
+
+  p.write('empty.txt', '');
+  const empty = cli(p.root, p.home, ['blame', 'empty.txt', '-L', '1,20']);
+  expect(empty.status).toBe(0);
+  expect(empty.stdout.trim()).toBe('(empty file)');
+  expect(JSON.parse(cli(p.root, p.home, ['blame', 'empty.txt', '-L', '1,20', '--json']).stdout)).toEqual([]);
+}, 30_000);
+
 it('passes arguments through turnback run unchanged', () => {
   const p = tempProject('turnback-run-args-');
   p.write('a.txt', 'a\n');
