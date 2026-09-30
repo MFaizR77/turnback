@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, lstatSync, renameSync
 import path from 'node:path';
 import {
   EDITS_ONLY_BYTES, editsOnlyFiles, GC_INTERVAL_MS, LOCK_TIMEOUT_MS, PROBE_TTL_MS, RETENTION, WARM_WAIT_MS,
-  pathKey, workspaceDataDir, workspaceRoot,
+  canonicalPath, pathKey, workspaceDataDir, workspaceRoot,
 } from './config.js';
 import { Journal, turnKey } from './journal.js';
 import { QUOTE_SAFE } from './quote.js';
@@ -264,7 +264,7 @@ export class Store {
 
   /** Turns whose changes include a file, or any file under a folder; newest first. */
   fileHistory(absPath: string): TurnSummary[] {
-    const rel = pathKey(path.resolve(this.root, absPath)) === pathKey(this.root) ? '' : this.workspace.relative(absPath);
+    const rel = pathKey(canonicalPath(path.resolve(this.root, absPath))) === pathKey(this.root) ? '' : this.workspace.relative(absPath);
     if (rel === undefined) throw new Error(`Path outside workspace: ${absPath}`);
     const key = pathKey(this.workspace.abs(rel));
     return this.turns().flatMap(turn => {
