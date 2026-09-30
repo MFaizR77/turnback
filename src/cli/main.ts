@@ -83,9 +83,13 @@ function needsWarm(event: HookEvent): boolean {
 
 function runRestore(store: Store, operation: Operation, args: Args): void {
   const step = args.values.get('--before-step');
+  const n = Number(step);
+  if (args.flags.has('--before-step') || step !== undefined && (!step.trim() || !Number.isSafeInteger(n) || n < 1)) {
+    throw new Error('--before-step must be a step number from turnback steps <turn>');
+  }
   const target = operation === 'undo' ? undoTarget(store)
     : operation === 'redo' ? redoTarget(store)
-    : step !== undefined && args.positional[0] ? store.stepRef(args.positional[0], Number(step))
+    : step !== undefined && args.positional[0] ? store.stepRef(args.positional[0], n)
     : args.positional[0];
   if (!target) throw new Error(operation === 'restore' ? 'Missing target turn or snapshot' : `Nothing to ${operation}`);
   const paths = args.paths.length ? args.paths : undefined;
@@ -219,8 +223,13 @@ async function main(): Promise<void> {
       return;
     }
     case 'ui': {
+      const value = args.values.get('--port');
+      const port = Number(value ?? 0);
+      if (args.flags.has('--port') || value !== undefined && !value.trim() || !Number.isInteger(port) || port < 0 || port > 65535) {
+        throw new Error('--port must be a whole number from 0 to 65535');
+      }
       const { startUi } = await import('../ui/server.js');
-      const ui = await startUi(store, Number(args.values.get('--port') ?? 0));
+      const ui = await startUi(store, port);
       output(`Turnback UI: ${ui.url}\nRead-only. Press Ctrl+C to stop.`);
       if (!args.flags.has('--no-open')) openBrowser(ui.url);
       return;
