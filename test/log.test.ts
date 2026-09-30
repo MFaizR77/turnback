@@ -33,6 +33,30 @@ it('rejects paths outside the workspace', () => {
   expect(() => new Store(p.root).fileHistory(path.resolve(p.root, '..', 'elsewhere.txt'))).toThrow(/outside workspace/);
 });
 
+it('lists changed turns for the workspace root, leaving out unchanged turns', () => {
+  const p = tempProject('turnback-log-root-');
+  p.write('a.txt', '0');
+  editTurn(p, 't1', 'a.txt', '1');
+  editTurn(p, 't2', 'a.txt', '1');
+  const store = new Store(p.root);
+  expect(store.fileHistory(p.file('.')).map(t => t.id.split(':').at(-1))).toEqual(['t1']);
+});
+
+it('matches file and folder casing according to the platform without matching sibling folders', () => {
+  const p = tempProject('turnback-log-case-');
+  mkdirSync(p.file('src'));
+  mkdirSync(p.file('src-other'));
+  p.write('src/a.txt', '0');
+  p.write('src-other/a.txt', '0');
+  editTurn(p, 't1', 'src/a.txt', '1');
+  editTurn(p, 't2', 'src-other/a.txt', '1');
+  const store = new Store(p.root);
+  const expected = process.platform === 'win32' ? ['t1'] : [];
+  expect(store.fileHistory(p.file('SRC/A.TXT')).map(t => t.id.split(':').at(-1))).toEqual(expected);
+  expect(store.fileHistory(p.file('SRC')).map(t => t.id.split(':').at(-1))).toEqual(expected);
+  expect(store.fileHistory(p.file('src')).map(t => t.id.split(':').at(-1))).toEqual(['t1']);
+});
+
 it('asks git for the changed files of each turn only once per process', async () => {
   const { vi } = await import('vitest');
   const p = tempProject('turnback-log-cache-');
