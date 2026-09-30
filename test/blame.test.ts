@@ -1,9 +1,16 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { expect, it } from 'vitest';
+import * as fs from 'node:fs';
+import path from 'node:path';
+import { expect, it, vi } from 'vitest';
 import { applyHunks, blameFile } from '../src/core/blame.js';
 import { applyRestore, undoTarget } from '../src/core/restore.js';
 import { Store } from '../src/core/store.js';
 import { hook, tempProject } from './helpers.js';
+
+vi.mock('node:fs', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return { ...actual, readFileSync: vi.fn(actual.readFileSync) };
+});
 
 type P = ReturnType<typeof tempProject>;
 
@@ -70,6 +77,56 @@ it('refuses binary files', () => {
   const p = tempProject('turnback-blame-bin-');
   writeFileSync(p.file('b.bin'), Buffer.from([1, 0, 2]));
   expect(() => blameFile(new Store(p.root), p.file('b.bin'))).toThrow('Binary or large file; blame shows text files only.');
+});
+
+it('identifies directories instead of suggesting recovery', () => {
+  const p = tempProject('turnback-blame-directory-');
+  mkdirSync(p.file('src'));
+  expect(() => blameFile(new Store(p.root), p.file('src'))).toThrow('src is a directory');
+});
+
+it('quotes missing-file recovery paths relative to the current working directory', () => {
+  const p = tempProject('turnback-blame-missing-');
+  mkdirSync(p.file('src'));
+  const target = p.file('src/missing file.txt');
+  const store = new Store(p.root);
+  const argument = path.relative(process.cwd(), store.workspace.abs('src/missing file.txt')).split(path.sep).join('/');
+  expect(() => blameFile(store, target)).toThrow(`turnback recover "${argument}"`);
+});
+
+it('does not print a recovery command for filenames the shell quoting helper cannot represent', () => {
+  const p = tempProject('turnback-blame-unsafe-name-');
+  expect(() => blameFile(new Store(p.root), p.file('missing$file.txt'))).toThrow('is not on disk');
+  expect(() => blameFile(new Store(p.root), p.file('missing$file.txt'))).not.toThrow(/run: turnback recover/);
+});
+
+it.each(['EACCES', 'EPERM'])('reports %s without suggesting that the file was deleted', code => {
+  const p = tempProject('turnback-blame-denied-');
+  p.write('f.txt', 'readable');
+  const store = new Store(p.root);
+  const read = vi.mocked(fs.readFileSync).mockImplementationOnce(() => {
+    throw Object.assign(new Error('read denied'), { code });
+  });
+  try {
+    expect(() => blameFile(store, p.file('f.txt'))).toThrow('Cannot read f.txt: permission denied');
+    expect(read).toHaveBeenCalledWith(store.workspace.abs('f.txt'));
+  } finally {
+    read.mockRestore();
+  }
+});
+
+it('preserves other read errors instead of suggesting recovery', () => {
+  const p = tempProject('turnback-blame-read-error-');
+  p.write('f.txt', 'readable');
+  const store = new Store(p.root);
+  const read = vi.mocked(fs.readFileSync).mockImplementationOnce(() => {
+    throw Object.assign(new Error('read device failure'), { code: 'EIO' });
+  });
+  try {
+    expect(() => blameFile(store, p.file('f.txt'))).toThrow('read device failure');
+  } finally {
+    read.mockRestore();
+  }
 });
 
 it('handles a file without a final newline', () => {

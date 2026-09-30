@@ -260,6 +260,19 @@ it('blames a file through the CLI, with a line range and JSON', () => {
   expect(gone.stderr).toContain('turnback recover nope.txt');
 }, 30_000);
 
+it('keeps blame recovery suggestions usable from a subdirectory', () => {
+  const p = tempProject('turnback-blame-path-cli-');
+  mkdirSync(p.file('src'));
+  const result = cli(p.file('src'), p.home, ['blame', 'missing file.txt']);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toContain('turnback recover "missing file.txt"');
+  expect(result.stderr).not.toContain('turnback recover src/');
+  const directory = cli(p.root, p.home, ['blame', 'src']);
+  expect(directory.status).toBe(2);
+  expect(directory.stderr).toContain('src is a directory');
+  expect(directory.stderr).not.toContain('turnback recover');
+}, 30_000);
+
 it('passes arguments through turnback run unchanged', () => {
   const p = tempProject('turnback-run-args-');
   p.write('a.txt', 'a\n');
