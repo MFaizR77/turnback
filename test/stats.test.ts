@@ -36,6 +36,49 @@ it('leaves out turns older than the window', () => {
   expect(s.restores).toBe(0);
 });
 
+it.each(['restore', 'undo'] as const)('counts files brought back by a partly failed %s', kind => {
+  const p = tempProject('turnback-stats-partial-');
+  const store = new Store(p.root);
+  const entry = store.log({
+    agent: 'turnback', session: 'restore', turn: 'target', kind,
+    status: 'failed', paths: ['a.txt', 'b.txt'],
+    note: JSON.stringify({ target: 'target', skipped: [], failed: ['c.txt'] }),
+  });
+  const s = turnStats(store, 7, Date.parse(entry.time));
+  expect(s).toMatchObject({ restores: 1, restoredFiles: 2 });
+  expect(formatStats(s)).toMatch(/^Restores +1, bringing back 2 files$/m);
+  expect(statsCard(s)).toContain('Turnback brought back 2 files.');
+});
+
+it.each([
+  { kind: 'restore', paths: [], restores: 1 },
+  { kind: 'undo', paths: undefined, restores: 0 },
+  { kind: 'redo', paths: ['a.txt', 'b.txt'], restores: 0 },
+] as const)('handles $kind entries with paths $paths', ({ kind, paths, restores }) => {
+  const p = tempProject('turnback-stats-paths-');
+  const store = new Store(p.root);
+  const entry = store.log({
+    agent: 'turnback', session: 'restore', turn: 'target', kind,
+    status: 'failed', paths: paths ? [...paths] : undefined,
+  });
+  expect(turnStats(store, 7, Date.parse(entry.time))).toMatchObject({ restores, restoredFiles: 0 });
+});
+
+it.each([
+  { offset: -1, restores: 0 },
+  { offset: 0, restores: 1 },
+  { offset: 24 * 60 * 60 * 1000, restores: 1 },
+  { offset: 24 * 60 * 60 * 1000 + 1, restores: 0 },
+])('keeps partly failed restores within the window at offset $offset', ({ offset, restores }) => {
+  const p = tempProject('turnback-stats-window-');
+  const store = new Store(p.root);
+  const entry = store.log({
+    agent: 'turnback', session: 'restore', turn: 'target', kind: 'restore',
+    status: 'failed', paths: ['a.txt', 'b.txt'],
+  });
+  expect(turnStats(store, 1, Date.parse(entry.time) + offset)).toMatchObject({ restores, restoredFiles: restores * 2 });
+});
+
 it('formats text and an SVG card with escaped text', () => {
   const s = turnStats(twoTurns(), 7);
   const text = formatStats(s);
