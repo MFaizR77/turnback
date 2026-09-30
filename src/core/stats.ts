@@ -42,9 +42,9 @@ export function turnStats(store: Store, days = 7, now = Date.now()): TurnStats {
     }
   }
   for (const e of store.entries()) {
-    if ((e.kind === 'restore' || e.kind === 'undo') && e.status === 'ok' && recent(e.time)) {
+    if ((e.kind === 'restore' || e.kind === 'undo') && e.paths && recent(e.time)) {
       stats.restores++;
-      stats.restoredFiles += e.paths?.length ?? 0;
+      stats.restoredFiles += e.paths.length;
     }
   }
   return stats;
