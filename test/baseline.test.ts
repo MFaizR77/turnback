@@ -3,6 +3,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, expect, it } from 'vitest';
 import { applyRestore, planRestore } from '../src/core/restore.js';
 import { Store } from '../src/core/store.js';
+import { Workspace } from '../src/workspace/workspace.js';
 import { hook, tempProject } from './helpers.js';
 
 let p: ReturnType<typeof tempProject>;
@@ -78,12 +79,21 @@ it('detects the next change against an imported baseline without rescanning cont
   expect(store.repo.diffNames(warm.ref!, next.ref!)).toEqual(['src/f3.txt']);
 });
 
-it('never snapshots its own data folder when TURNBACK_HOME is inside the workspace', () => {
+it.each([
+  'tb-data', 'tb[data]', 'tb!data', 'tb#data',
+  ...(process.platform === 'win32' ? [] : ['tb*data', 'tb?data']),
+])('never snapshots its own data folder named %s inside the workspace', home => {
   const p = tempProject('turnback-home-inside-');
-  process.env.TURNBACK_HOME = p.file('tb-data');
+  process.env.TURNBACK_HOME = p.file(home);
   p.write('a.txt', 'a');
+  // These names would match an unescaped character class or wildcard.
+  mkdirSync(p.file('tbd'));
+  p.write('tbd/keep.txt', 'keep');
+  mkdirSync(p.file('tbXdata'));
+  p.write('tbXdata/keep.txt', 'keep');
   hook(p.root, 'turn-start', 't');
   hook(p.root, 'shell', 't', { command: 'rm a.txt' });
+  expect(new Workspace(p.root).scan().paths).toEqual(['a.txt', 'tbd/keep.txt', 'tbXdata/keep.txt']);
   rmSync(p.file('a.txt'));
   hook(p.root, 'turn-end', 't');
   const plan = planRestore(new Store(p.root), 't');

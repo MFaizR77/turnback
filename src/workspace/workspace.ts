@@ -27,7 +27,7 @@ export class Workspace {
     this.matcher.add(userConfig().exclude ?? []);
     // A TURNBACK_HOME inside the project must never snapshot, or restore over, Turnback's own data.
     const home = this.relative(dataHome());
-    if (home) this.matcher.add(`/${home}/`);
+    if (home) this.matcher.add(`/${home.replace(/[\\[\]*?!#]/g, '\\$&')}/`);
   }
 
   abs(rel: string): string {
