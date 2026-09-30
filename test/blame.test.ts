@@ -94,6 +94,19 @@ it('quotes missing-file recovery paths relative to the current working directory
   expect(() => blameFile(store, target)).toThrow(`turnback recover "${argument}"`);
 });
 
+it('quotes recovery paths relative to a canonical working directory', () => {
+  const p = tempProject('turnback-blame-cwd-alias-');
+  fs.mkdirSync(p.file('src'));
+  fs.symlinkSync(p.file('src'), p.file('alias'), process.platform === 'win32' ? 'junction' : 'dir');
+  const store = new Store(p.root);
+  const cwd = vi.spyOn(process, 'cwd').mockReturnValue(p.file('alias'));
+  try {
+    expect(() => blameFile(store, p.file('src/missing file.txt'))).toThrow('turnback recover "missing file.txt"');
+  } finally {
+    cwd.mockRestore();
+  }
+});
+
 it('does not print a recovery command for filenames the shell quoting helper cannot represent', () => {
   const p = tempProject('turnback-blame-unsafe-name-');
   expect(() => blameFile(new Store(p.root), p.file('missing$file.txt'))).toThrow('is not on disk');
