@@ -71,6 +71,8 @@ turnback mark "before migration"    # a checkpoint of your own
 turnback run -- npm run codegen     # any command as an undoable turn, no agent needed
 turnback recover src/app.ts         # bring back one file (or a folder) an agent deleted turns ago
 turnback blame src/auth.ts          # which turn and prompt wrote each line
+turnback report --pr --apply        # add which prompts wrote this branch to its pull request
+turnback du                         # Turnback's disk use for every workspace
 turnback ui                         # timeline in the browser
 ```
 

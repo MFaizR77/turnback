@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { formatTime } from './format.js';
 import type { NameStatus } from '../git/shadow.js';
 import type { Store } from './store.js';
@@ -120,4 +121,56 @@ ${sections.join('\n')}
 </body>
 </html>
 `;
+}
+
+export const PR_START = '<!-- turnback:start -->';
+export const PR_END = '<!-- turnback:end -->';
+const PROMPT_CHARS = 120;
+
+/** Run git in the user's repository (read-only commands only). */
+function userGit(root: string, args: string[]): string {
+  const r = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', windowsHide: true });
+  if (r.status !== 0) throw new Error(`git ${args[0]}: ${(r.stderr || '').trim() || 'failed'}`);
+  return r.stdout;
+}
+
+/** One line for a markdown table cell: whitespace collapsed, `|` escaped, at most 120 characters. */
+function cell(text: string): string {
+  const flat = text.replace(/\s+/g, ' ').trim();
+  const short = flat.length > PROMPT_CHARS ? flat.slice(0, PROMPT_CHARS - 1) + '…' : flat;
+  return short.replaceAll('|', '\|');
+}
+
+/**
+ * Markdown section for a pull request description: each turn since the branch left `base` that
+ * changed files the branch changes, with its agent, time, prompt, and those files.
+ */
+export function prReport(store: Store, base: string): string {
+  const files = new Set(userGit(store.root, ['diff', '--name-only', '--no-renames', '--relative', `${base}...HEAD`]).split('\n').filter(Boolean));
+  const forkPoint = userGit(store.root, ['merge-base', base, 'HEAD']).trim();
+  const since = Number(userGit(store.root, ['log', '-1', '--format=%ct', forkPoint]).trim()) * 1000;
+  const rows = store.turns().reverse().flatMap(turn => {
+    if (!turn.end || Date.parse(turn.time) < since) return [];
+    const touched = store.repo.diffNameStatus(turn.baseline, turn.end).map(c => c.path).filter(p => files.has(p));
+    return touched.length ? [{ turn, touched }] : [];
+  });
+  const lines = [PR_START, '### AI provenance', ''];
+  if (!rows.length) lines.push('No recorded agent turn changed the files in this pull request.');
+  else {
+    lines.push('| # | Agent | When | Prompt | Files in this PR |', '|---|---|---|---|---|');
+    rows.forEach(({ turn, touched }, i) => {
+      const prompt = store.summarize(turn, []).prompt;
+      lines.push(`| ${i + 1} | ${turn.agent} | ${formatTime(turn.time)} | ${prompt ? cell(prompt) : '(no prompt)'} | ${touched.map(code).join(', ')} |`);
+    });
+  }
+  lines.push('', '<sub>Recorded by [Turnback](https://github.com/MFaizR77/turnback): each row is an agent turn that changed files in this pull request.</sub>', PR_END);
+  return lines.join('\n') + '\n';
+}
+
+/** `body` with its provenance section replaced by `section`, or with `section` added at the end. */
+export function withPrSection(body: string, section: string): string {
+  const start = body.indexOf(PR_START);
+  const end = body.indexOf(PR_END, start);
+  if (start >= 0 && end >= 0) return body.slice(0, start) + section.trimEnd() + body.slice(end + PR_END.length);
+  return body.trim() ? `${body.trimEnd()}\n\n${section}` : section;
 }

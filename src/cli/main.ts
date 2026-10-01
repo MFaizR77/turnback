@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -8,7 +8,7 @@ import { dataHome, VERSION } from '../core/config.js';
 import { parseArgs, type Args } from './args.js';
 import { exportCommit, exportPatch } from '../core/export.js';
 import { compareTurns } from '../core/compare.js';
-import { htmlReport, sessionOf, sessionReport } from '../core/report.js';
+import { htmlReport, prReport, sessionOf, sessionReport, withPrSection } from '../core/report.js';
 import { formatStats, statsCard, turnStats } from '../core/stats.js';
 import { compactWorkspaces, diskUsage, prunable, pruneWorkspaces } from '../core/du.js';
 import { formatBlame, formatBytes, formatConfigFiles, formatDiskUsage, formatMarks, formatPlan, formatRecoverTarget, formatRestoreResult, formatStatus, formatSteps, formatTime, formatTurns } from '../core/format.js';
@@ -37,7 +37,7 @@ const USAGE = `Usage:
   turnback recover <file|folder> [--dry-run | --yes] [--json]
   turnback run [--label <text>] -- <command...>
   turnback export <turn...> [--out <file.patch>] | --commit [--message <text>]
-  turnback report [--session <id>] [--html [--out <file>]]
+  turnback report [--session <id>] [--html [--out <file>]] | --pr [--base <branch>] [--apply]
   turnback stats [--days <n>] [--json] [--svg <file>]
   turnback compare <turnA> <turnB> [--json]
   turnback ui [--port <n>] [--no-open]
@@ -316,6 +316,7 @@ async function main(): Promise<void> {
       return;
     }
     case 'report': {
+      if (args.flags.has('--pr')) return prReportCommand(store, args);
       const session = args.values.get('--session');
       if (!args.flags.has('--html')) return output(sessionReport(store, session));
       const html = htmlReport(store, session);
@@ -358,6 +359,33 @@ async function main(): Promise<void> {
       output(USAGE);
       if (command && command !== 'help' && command !== '--help') process.exitCode = 2;
   }
+}
+
+/** `turnback report --pr [--base <branch>] [--apply]`: provenance section for this branch's pull request. */
+function prReportCommand(store: Store, args: Args): void {
+  const base = args.values.get('--base') ?? defaultBase(store.root);
+  const section = prReport(store, base);
+  if (!args.flags.has('--apply')) return output(section.trimEnd());
+  const body = gh(store.root, ['pr', 'view', '--json', 'body', '--jq', '.body']).replace(/\n$/, '');
+  gh(store.root, ['pr', 'edit', '--body-file', '-'], withPrSection(body, section));
+  output('Updated the pull request description with the AI provenance section.');
+}
+
+/** The remote's default branch (such as `origin/main`), or `main`. */
+function defaultBase(root: string): string {
+  const r = spawnSync('git', ['-C', root, 'rev-parse', '--abbrev-ref', 'origin/HEAD'], { encoding: 'utf8', windowsHide: true });
+  return r.status === 0 && r.stdout.trim() ? r.stdout.trim() : 'main';
+}
+
+/** Run the GitHub CLI. TURNBACK_GH_SCRIPT runs a Node script in its place, for tests. */
+function gh(cwd: string, args: string[], input?: string): string {
+  const script = process.env.TURNBACK_GH_SCRIPT;
+  const r = script
+    ? spawnSync(process.execPath, [script, ...args], { cwd, input, encoding: 'utf8', windowsHide: true })
+    : spawnSync('gh', args, { cwd, input, encoding: 'utf8', windowsHide: true });
+  if (r.error) throw new Error('--apply needs the GitHub CLI (gh): https://cli.github.com');
+  if (r.status !== 0) throw new Error(`gh ${args.slice(0, 2).join(' ')}: ${(r.stderr || '').trim()}`);
+  return r.stdout;
 }
 
 /** `turnback du [--json] [--prune [--yes] | --compact]`: Turnback's data for every workspace. */
