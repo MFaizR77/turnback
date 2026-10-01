@@ -1,5 +1,5 @@
 import { formatTime } from './format.js';
-import type { Store } from './store.js';
+import { isStepEntry, type Store } from './store.js';
 
 export interface TurnStats {
   days: number;
@@ -31,7 +31,7 @@ export function turnStats(store: Store, days = 7, now = Date.now()): TurnStats {
     stats.turns++;
     stats.byAgent[turn.agent] = (stats.byAgent[turn.agent] ?? 0) + 1;
     for (const e of turn.entries) {
-      if (e.command !== undefined && (e.kind === 'edit' || e.kind === 'shell' || (e.kind === 'baseline' && e.status === 'ok'))) stats.commands++;
+      if (e.command !== undefined && isStepEntry(e)) stats.commands++;
     }
     if (!turn.end) continue;
     for (const change of store.repo.diffNameStatus(turn.baseline, turn.end)) {
