@@ -10,7 +10,8 @@ import { exportCommit, exportPatch } from '../core/export.js';
 import { compareTurns } from '../core/compare.js';
 import { htmlReport, sessionOf, sessionReport } from '../core/report.js';
 import { formatStats, statsCard, turnStats } from '../core/stats.js';
-import { formatBlame, formatConfigFiles, formatMarks, formatPlan, formatRecoverTarget, formatRestoreResult, formatStatus, formatSteps, formatTime, formatTurns } from '../core/format.js';
+import { compactWorkspaces, diskUsage, prunable, pruneWorkspaces } from '../core/du.js';
+import { formatBlame, formatBytes, formatConfigFiles, formatDiskUsage, formatMarks, formatPlan, formatRecoverTarget, formatRestoreResult, formatStatus, formatSteps, formatTime, formatTurns } from '../core/format.js';
 import { install, uninstall } from '../agents/install.js';
 import { shellArg } from '../core/quote.js';
 import { pendingForeignRoots, record } from '../core/recorder.js';
@@ -24,6 +25,7 @@ import type { Agent, HookEvent, Turn } from '../core/types.js';
 const USAGE = `Usage:
   turnback install|uninstall <claude|codex|gemini|cursor|opencode|antigravity|all> [--project] [--no-mcp]
   turnback list [--json] | status [--json] | gc
+  turnback du [--json] [--prune [--yes] | --compact]
   turnback steps <turn> [--json]
   turnback log <file|folder> [--json]
   turnback blame <file> [-L <start>,<end>] [--json]
@@ -210,6 +212,8 @@ async function main(): Promise<void> {
     case 'gc':
       output(store.gc({ compact: true }));
       return;
+    case 'du':
+      return diskUsageCommand(args);
     case 'steps': {
       const id = args.positional[0];
       if (!id) throw new Error('Missing turn id');
@@ -354,6 +358,32 @@ async function main(): Promise<void> {
       output(USAGE);
       if (command && command !== 'help' && command !== '--help') process.exitCode = 2;
   }
+}
+
+/** `turnback du [--json] [--prune [--yes] | --compact]`: Turnback's data for every workspace. */
+function diskUsageCommand(args: Args): void {
+  const list = diskUsage();
+  const candidates = prunable(list);
+  if (args.flags.has('--compact')) {
+    const { packed, before, after } = compactWorkspaces(list);
+    output(`Packed ${packed} ${packed === 1 ? 'workspace' : 'workspaces'}: ${formatBytes(before)} → ${formatBytes(after)}.`);
+    return;
+  }
+  if (args.flags.has('--prune')) {
+    const bytes = formatBytes(candidates.reduce((n, u) => n + u.bytes, 0));
+    const count = `${candidates.length} ${candidates.length === 1 ? 'workspace' : 'workspaces'}`;
+    if (!candidates.length) return output('Nothing to remove: every workspace still exists or was used in the last 30 days.');
+    if (!args.flags.has('--yes')) {
+      output([`Would remove the data of ${count} (${bytes}):`,
+        ...candidates.map(u => `  ${u.root ? `${u.root} (no longer exists)` : `${u.dir} (unknown workspace, last used ${u.lastActivity?.slice(0, 10) ?? 'never'})`}`),
+        `Use --yes to remove ${candidates.length === 1 ? 'it' : 'them'}.`].join('\n'));
+      return;
+    }
+    const { removed, bytes: freed } = pruneWorkspaces(candidates);
+    output(`Removed the data of ${removed} ${removed === 1 ? 'workspace' : 'workspaces'} (${formatBytes(freed)}).`);
+    return;
+  }
+  output(args.flags.has('--json') ? list : formatDiskUsage(dataHome(), list, candidates));
 }
 
 function warmInBackground(cwd: string): void {

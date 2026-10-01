@@ -29,6 +29,11 @@ export const EXCLUDED_DIRS = new Set([
   'target', '.next', '.nuxt', '.cache', 'coverage', '.turbo', '.gradle',
 ]);
 
+/** In each workspace's data folder: `{ "root": "<workspace path>" }`, written since 0.9.0. */
+export const WORKSPACE_FILE = 'workspace.json';
+/** `du --prune` removes data folders without a recorded workspace once idle this long. */
+export const UNKNOWN_IDLE_DAYS = 30;
+
 export const dataHome = () => process.env.TURNBACK_HOME || path.join(homedir(), '.turnback');
 
 export interface UserConfig {

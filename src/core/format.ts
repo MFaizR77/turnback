@@ -3,6 +3,7 @@ import type { Operation, RestorePlan, RestoreResult } from './restore.js';
 import type { Store, TurnSummary } from './store.js';
 import type { Mark, Step } from './types.js';
 import type { BlameLine } from './blame.js';
+import type { WorkspaceUsage } from './du.js';
 
 const pad = (n: number) => String(n).padStart(2, '0');
 
@@ -67,7 +68,7 @@ export function formatRestoreResult(result: Pick<RestoreResult, 'applied' | 'fai
   return lines.join('\n');
 }
 
-function formatBytes(n: number): string {
+export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
   const units = ['kB', 'MB', 'GB'];
   let v = n / 1024, i = 0;
@@ -127,4 +128,27 @@ export function formatBlame(lines: BlameLine[], numbers: Map<string, number>): s
 /** What `recover` brings back: `src/app.ts` for a file, `src/ (3 files)` for a folder. */
 export function formatRecoverTarget(rel: string, paths: string[]): string {
   return paths.length === 1 && paths[0] === rel ? rel : `${rel}/ (${paths.length} ${paths.length === 1 ? 'file' : 'files'})`;
+}
+
+/** `turnback du`: every workspace's data, largest first, with what can be freed. */
+export function formatDiskUsage(home: string, list: WorkspaceUsage[], prunable: WorkspaceUsage[]): string {
+  const total = list.reduce((n, u) => n + u.bytes, 0);
+  const lines = [`Turnback data in ${home}: ${formatBytes(total)} in ${plural(list.length, 'workspace')}`];
+  if (!list.length) return lines[0];
+  lines.push('');
+  const sizes = list.map(u => formatBytes(u.bytes));
+  const width = Math.max(...sizes.map(s => s.length));
+  list.forEach((u, i) => {
+    const where = u.root ? (u.exists ? u.root : `${u.root} (no longer exists)`) : u.near ? `(unknown workspace, has files in ${u.near})` : '(unknown workspace)';
+    const extra = [plural(u.turns, 'turn'), u.lastActivity ? `last used ${u.lastActivity.slice(0, 10)}` : '',
+      u.garbageBytes ? `${formatBytes(u.garbageBytes)} reclaimable` : ''].filter(Boolean).join(' · ');
+    lines.push(`  ${sizes[i].padStart(width)}  ${where}  ${extra}`);
+  });
+  const garbage = list.reduce((n, u) => n + u.garbageBytes, 0);
+  if (garbage) lines.push('', `${formatBytes(garbage)} is left over from interrupted writes. Free it with: turnback du --compact`);
+  if (prunable.length) {
+    const bytes = prunable.reduce((n, u) => n + u.bytes, 0);
+    lines.push('', `${plural(prunable.length, 'workspace')} (${formatBytes(bytes)}) ${prunable.length === 1 ? 'no longer exists or is' : 'no longer exist or are'} unknown and idle for 30 days. Review with: turnback du --prune`);
+  }
+  return lines.join('\n');
 }

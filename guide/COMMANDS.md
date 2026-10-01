@@ -27,6 +27,7 @@ Every command prints text for people. Where noted, `--json` prints the raw data 
 | `stats [--days <n>] [--json] [--svg <file>]` | What agents did in this workspace over the last N days (default 7): turns per agent, files created, changed, and deleted, shell commands, and files brought back by restores. `--svg` writes a 1200×630 card to share. |
 | `status [--json]` | Workspace, mode, storage, and any failed or skipped snapshots. |
 | `gc` | Cleans up turns older than 7 days that are outside the last 50, then packs the shadow repo and removes leftovers of interrupted writes. Runs automatically at most once a day; the automatic run packs only when something expired, a write left leftovers, or loose objects pass 1,000 or 32 MB. |
+| `du [--json] [--prune [--yes] \| --compact]` | Turnback's data for every workspace, largest first: size, turns, last use, and leftovers of interrupted writes. `--compact` packs every workspace's snapshots and removes those leftovers. `--prune` lists the data of workspaces that no longer exist, or that have no recorded workspace (data from before 0.9.0) and were idle for 30 days; with `--yes` it removes them. |
 | `--version` | Prints the installed version (also `-v` and `version`). |
 | `mcp` | Starts the stdio MCP server (see [MCP](MCP.md)). |
 

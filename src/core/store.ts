@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, lstatSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
-  COMPACT_LOOSE, EDITS_ONLY_BYTES, editsOnlyFiles, GC_INTERVAL_MS, LOCK_TIMEOUT_MS, PROBE_TTL_MS, RETENTION, WARM_WAIT_MS,
+  COMPACT_LOOSE, EDITS_ONLY_BYTES, editsOnlyFiles, WORKSPACE_FILE, GC_INTERVAL_MS, LOCK_TIMEOUT_MS, PROBE_TTL_MS, RETENTION, WARM_WAIT_MS,
   canonicalPath, pathKey, workspaceDataDir, workspaceRoot,
 } from './config.js';
 import { Journal, turnKey } from './journal.js';
@@ -55,7 +55,21 @@ export class Store {
   }
 
   log(entry: NewEntry): Entry {
-    return this.journal.append(entry);
+    const logged = this.journal.append(entry);
+    this.noteRoot();
+    return logged;
+  }
+
+  private rootNoted = false;
+
+  /** Write `workspace.json` once, so `turnback du` can tell which workspace this data belongs to. */
+  private noteRoot(): void {
+    if (this.rootNoted) return;
+    this.rootNoted = true;
+    const file = path.join(this.dir, WORKSPACE_FILE);
+    try {
+      if (!existsSync(file)) writeFileSync(file, JSON.stringify({ root: this.root }));
+    } catch { /* only used by du */ }
   }
 
   latestRef(): string | undefined {
@@ -444,7 +458,7 @@ export function originFields(o: EntryOrigin): EntryOrigin {
   return { agent: o.agent, session: o.session, turn: o.turn, paths: o.paths, command: o.command };
 }
 
-function directorySize(dir: string): number {
+export function directorySize(dir: string): number {
   let total = 0;
   try {
     for (const item of readdirSync(dir, { withFileTypes: true })) {
