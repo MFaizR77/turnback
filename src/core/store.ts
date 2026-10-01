@@ -378,16 +378,20 @@ export class Store {
   // ---- Status and cleanup ----
 
   status() {
-    const scan = this.workspace.scan();
+    // Large workspaces are the slow ones to scan, and they are in edits-only mode, where only edited
+    // paths are snapshotted and a list of skipped files says little. So status scans only until the
+    // edits-only limit, like warm, and not at all once that mode is decided.
+    const decided = this.mode() === 'edits-only';
+    const scan = decided ? undefined : this.workspace.scan({ files: editsOnlyFiles(), bytes: EDITS_ONLY_BYTES });
     const entries = this.entries();
     return {
       workspace: this.root,
       storage: this.dir,
       storageBytes: directorySize(this.dir),
-      mode: this.mode() === 'edits-only' || Store.modeFor(scan) === 'edits-only' ? 'edits-only' : 'full',
+      mode: decided || Store.modeFor(scan!) === 'edits-only' ? 'edits-only' : 'full',
       turns: this.turns().length,
       lastGc: entries.findLast(e => e.kind === 'gc' && e.status === 'ok')?.time,
-      skippedFiles: scan.skipped,
+      skippedFiles: scan && !scan.truncated ? scan.skipped : [],
       failures: entries.filter(e => e.status !== 'ok').slice(-20),
       corrupt: existsSync(this.dir)
         ? readdirSync(this.dir).filter(name => name.startsWith(CORRUPT_PREFIX)).map(name => path.join(this.dir, name))

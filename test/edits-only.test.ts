@@ -88,3 +88,32 @@ it('keeps an edits-only decision without scanning again', () => {
   s.warm();
   expect(s.warm().note).toMatch(/already/);
 });
+
+it('reports status without scanning the workspace once edits-only mode is decided', async () => {
+  const { vi } = await import('vitest');
+  const s = new Store(p.root);
+  s.warm();
+  const scan = vi.spyOn(s.workspace, 'scan');
+  const status = s.status();
+  expect(status.mode).toBe('edits-only');
+  expect(status.skippedFiles).toEqual([]);
+  expect(scan).not.toHaveBeenCalled();
+});
+
+it('stops the status scan at the edits-only limit when no mode is decided yet', async () => {
+  const { vi } = await import('vitest');
+  const s = new Store(p.root);
+  const scan = vi.spyOn(s.workspace, 'scan');
+  expect(s.status().mode).toBe('edits-only');
+  expect(scan).toHaveBeenCalledTimes(1);
+  expect(scan.mock.calls[0][0]).toMatchObject({ files: 3 });
+  expect(scan.mock.results[0].value.paths.length).toBeLessThanOrEqual(4);
+});
+
+it('still lists skipped files in a full-mode workspace', () => {
+  delete process.env.TURNBACK_MAX_FILES;
+  p.write('big.bin', Buffer.alloc(5 * 1024 * 1024 + 1));
+  const status = new Store(p.root).status();
+  expect(status.mode).toBe('full');
+  expect(status.skippedFiles).toEqual(['big.bin']);
+});
