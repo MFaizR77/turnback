@@ -130,6 +130,53 @@ def record_cli_session(work: Path) -> dict[str, str]:
     }
 
 
+RETRY = """import { readFileSync, writeFileSync } from 'node:fs';
+const lines = readFileSync('src/api.ts', 'utf8').split('\\n');
+lines[1] = 'export const getUser = withRetry(fetchUser);';
+lines.splice(1, 0, "import { withRetry } from './retry';");
+writeFileSync('src/api.ts', lines.join('\\n'));
+"""
+
+TOUR_STEPS = [
+    ("mark", ["mark", "before codegen"]),
+    ("run codegen", ["run", "--label", "codegen", "--", "node", "scripts/codegen.mjs"]),
+    ("run retries", ["run", "--label", "add retries", "--", "node", "scripts/retry.mjs"]),
+    ("list", ["list"]),
+    ("blame", ["blame", "src/api.ts"]),
+    ("undo plan", ["undo", "--dry-run"]),
+    ("recover", ["recover", "src/legacy.ts", "--yes"]),
+    ("stats", ["stats"]),
+    ("restore mark", ["restore", "before codegen", "--dry-run"]),
+]
+
+
+def record_tour_session(work: Path) -> list[tuple[str, str]]:
+    """A longer tour without an agent: mark, two runs, list, blame, undo plan, recover, stats, restore to the mark."""
+    project, home = work / "my-app", work / "home"
+    (project / "src").mkdir(parents=True)
+    (project / "scripts").mkdir()
+    home.mkdir()
+    env = {**os.environ, "TURNBACK_HOME": str(home)}
+    files = {
+        "src/api.ts": "// API client, keep this header\nexport const getUser = (id) => fetch('/user?id=' + id);\n",
+        "src/legacy.ts": "export const oldAuth = () => true;\n",
+        "scripts/codegen.mjs": CODEGEN,
+        "scripts/retry.mjs": RETRY,
+    }
+    for name, text in files.items():
+        (project / name).write_text(text, encoding="utf-8", newline="\n")
+    run(["git", "init", "-q"], project, env)
+
+    shown = []
+    for _, args in TOUR_STEPS:
+        result = subprocess.run(["node", str(CLI), *args], cwd=project, env=env, capture_output=True, text=True, encoding="utf-8")
+        if result.returncode != 0:
+            sys.exit(f"turnback {' '.join(args)} failed:\n{result.stderr}")
+        command = "turnback " + " ".join(f'"{a}"' if " " in a else a for a in args)
+        shown.append((command, (result.stdout + result.stderr).rstrip("\n")))
+    return shown
+
+
 # ---- Rendering --------------------------------------------------------------
 
 def load_font(explicit: str | None, size: int) -> ImageFont.FreeTypeFont:
@@ -186,6 +233,26 @@ def build_cli_script(o: dict[str, str]) -> list[tuple[str, object, int]]:
         ("type", "turnback recover src/legacy.ts --yes", 300),
         ("show", highlight(o["recover"]), 3000),
     ]
+
+
+def build_tour_script(steps: list[tuple[str, str]]) -> list[tuple[str, object, int]]:
+    accent = ("Restored", "turnback: recorded", "Marked")
+    width = 90  # the tour terminal is 92 columns; wrap longer lines instead of cutting them off
+    script: list[tuple[str, object, int]] = []
+    for command, output in steps:
+        lines = []
+        for line in output.split("\n"):
+            color = ACCENT if line.startswith(accent) else FG
+            while len(line) > width:
+                cut = line.rfind(" ", 0, width)
+                cut = cut if cut > 0 else width
+                lines.append([(line[:cut], color)])
+                line = "  " + line[cut:].lstrip()
+            lines.append([(line, color)])
+        pause = 1200 + 110 * len(lines)
+        script += [("type", command, 250), ("show", lines, min(pause, 3200))]
+    script[-1] = (script[-1][0], script[-1][1], 4000)
+    return script
 
 
 class Terminal:
@@ -287,11 +354,14 @@ def main() -> None:
         output = record_session(Path(tmp))
     with tempfile.TemporaryDirectory(prefix="turnback-demo-cli-", ignore_cleanup_errors=True) as tmp:
         cli_output = record_cli_session(Path(tmp))
+    with tempfile.TemporaryDirectory(prefix="turnback-demo-tour-", ignore_cleanup_errors=True) as tmp:
+        tour_output = record_tour_session(Path(tmp))
     font = load_font(args.font, 17)
     render_gif(build_script(output), font, DOCS / "demo.gif")
     render_gif(build_cli_script(cli_output), font, DOCS / "demo-cli.gif", rows=16)
+    render_gif(build_tour_script(tour_output), font, DOCS / "demo-tour.gif", rows=24)
     render_social(output, args.font, DOCS / "social-preview.png")
-    for name in ("demo.gif", "demo-cli.gif", "social-preview.png"):
+    for name in ("demo.gif", "demo-cli.gif", "demo-tour.gif", "social-preview.png"):
         print(f"{name}: {(DOCS / name).stat().st_size // 1024} kB")
 
 

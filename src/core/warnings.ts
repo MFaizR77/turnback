@@ -6,7 +6,7 @@ import type { HookEvent } from './types.js';
 
 export const DEFAULT_WARN_DELETES = 20;
 /** File names that usually hold secrets or keys. */
-export const SENSITIVE = /^(\.env(\..+)?|id_(rsa|dsa|ecdsa|ed25519)|.+\.(pem|key|p12|pfx)|credentials(\.json)?|\.npmrc|\.netrc)$/i;
+export const SENSITIVE = /^(\.env(?!\.(example|sample|template)$)(\..+)?|id_(rsa|dsa|ecdsa|ed25519)|.+\.(pem|key|p12|pfx|jks|keystore)|credentials(\.json)?|\.npmrc|\.netrc|\.git-credentials)$/i;
 
 /**
  * A one-line warning for a finished turn that deleted many files, changed secrets, or edited other

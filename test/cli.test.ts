@@ -138,6 +138,29 @@ it('prints usage and exits 2 for an unknown command', () => {
   expect(r.stdout).toMatch(/Usage:/);
 });
 
+it('rejects invalid UI port values before starting a server', () => {
+  const p = tempProject('turnback-port-cli-');
+  for (const value of ['abc', 'NaN', 'Infinity', '-1', '65536', '1.5', '', ' ', undefined]) {
+    const result = spawnSync(process.execPath, [CLI, 'ui', '--no-open', '--port', ...value === undefined ? [] : [value]], {
+      cwd: p.root, encoding: 'utf8', env: { ...process.env, TURNBACK_HOME: p.home }, windowsHide: true, timeout: 3000,
+    });
+    expect(result.status, `--port ${JSON.stringify(value)}`).toBe(2);
+    expect(result.stderr).toContain('--port must be a whole number from 0 to 65535');
+    expect(result.stdout).not.toContain('Turnback UI:');
+  }
+}, 30_000);
+
+it('rejects invalid step numbers before looking up a restore target', () => {
+  const p = tempProject('turnback-step-value-cli-');
+  p.write('a.txt', 'unchanged');
+  for (const value of ['abc', 'NaN', 'Infinity', '-1', '0', '1.5', '9007199254740992', '', ' ', undefined]) {
+    const result = cli(p.root, p.home, ['restore', 'missing', '--yes', '--before-step', ...value === undefined ? [] : [value]]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('--before-step must be a step number from turnback steps <turn>');
+    expect(p.read('a.txt')).toBe('unchanged');
+  }
+});
+
 it('lists steps and restores to just before one', () => {
   const p = tempProject('turnback-steps-cli-');
   p.write('a.txt', 'v0');
@@ -181,7 +204,7 @@ it('recovers one deleted file through the CLI', () => {
   send({ hook_event_name: 'Stop' });
 
   const dry = cli(p.root, p.home, ['recover', 'gone.txt', '--dry-run']);
-  expect(dry.stdout).toMatch(/^Recover gone\.txt from turn "tidy up" \(claude, /);
+  expect(dry.stdout).toMatch(/^Recover gone\.txt from just before turn "tidy up" \(claude, /);
   expect(dry.stdout).toMatch(/^ {2}restore +gone\.txt$/m);
   expect(dry.stdout).not.toContain('other.txt');
   expect(cli(p.root, p.home, ['recover', 'gone.txt', '--yes']).status).toBe(0);
@@ -192,6 +215,17 @@ it('recovers one deleted file through the CLI', () => {
   expect(none.status).toBe(1);
   expect(none.stdout).toContain('No snapshot has a version of never.txt');
 }, 30_000);
+
+it('names the completed turn when recovering its end snapshot', () => {
+  const p = tempProject('turnback-recover-end-cli-');
+  const run = cli(p.root, p.home, ['run', '--label', 'create file', '--', process.execPath, '-e', "require('node:fs').writeFileSync('made.txt', 'made')"]);
+  expect(run.status).toBe(0);
+  rmSync(p.file('made.txt'));
+  const dry = cli(p.root, p.home, ['recover', 'made.txt', '--dry-run']);
+  expect(dry.status).toBe(0);
+  expect(dry.stdout).toMatch(/^Recover made\.txt from turn "create file" \(manual, /);
+  expect(existsSync(p.file('made.txt'))).toBe(false);
+});
 
 it('records any command as a turn with turnback run, and undoes it', () => {
   const p = tempProject('turnback-run-');
@@ -297,6 +331,43 @@ it('blames a file through the CLI, with a line range and JSON', () => {
   const gone = cli(p.root, p.home, ['blame', 'nope.txt']);
   expect(gone.status).toBe(2);
   expect(gone.stderr).toContain('turnback recover nope.txt');
+}, 30_000);
+
+it('keeps blame recovery suggestions usable from a subdirectory', () => {
+  const p = tempProject('turnback-blame-path-cli-');
+  mkdirSync(p.file('src'));
+  const result = cli(p.file('src'), p.home, ['blame', 'missing file.txt']);
+  expect(result.status).toBe(2);
+  expect(result.stderr).toContain('turnback recover "missing file.txt"');
+  expect(result.stderr).not.toContain('turnback recover src/');
+  const directory = cli(p.root, p.home, ['blame', 'src']);
+  expect(directory.status).toBe(2);
+  expect(directory.stderr).toContain('src is a directory');
+  expect(directory.stderr).not.toContain('turnback recover');
+}, 30_000);
+
+it('reports a blame range beyond the file without calling a nonempty file empty', () => {
+  const p = tempProject('turnback-blame-range-');
+  p.write('f.txt', 'a\nb\nc\n');
+  for (const extra of [[], ['--json']]) {
+    const result = cli(p.root, p.home, ['blame', 'f.txt', '-L', '4,20', ...extra]);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('f.txt has 3 lines');
+    expect(result.stdout).toBe('');
+  }
+  const partial = cli(p.root, p.home, ['blame', 'f.txt', '-L', '3,20', '--json']);
+  expect(partial.status).toBe(0);
+  expect(JSON.parse(partial.stdout)).toEqual([{ line: 3, text: 'c', source: 'before' }]);
+  p.write('one.txt', 'one');
+  const single = cli(p.root, p.home, ['blame', 'one.txt', '-L', '2,2']);
+  expect(single.status).toBe(2);
+  expect(single.stderr).toContain('one.txt has 1 line');
+
+  p.write('empty.txt', '');
+  const empty = cli(p.root, p.home, ['blame', 'empty.txt', '-L', '1,20']);
+  expect(empty.status).toBe(0);
+  expect(empty.stdout.trim()).toBe('(empty file)');
+  expect(JSON.parse(cli(p.root, p.home, ['blame', 'empty.txt', '-L', '1,20', '--json']).stdout)).toEqual([]);
 }, 30_000);
 
 it.each([true, false])('passes arguments through turnback run unchanged (separator: %s)', separator => {

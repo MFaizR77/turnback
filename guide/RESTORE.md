@@ -14,7 +14,7 @@ MCP tokens are bound to the target, the selected paths, and a hash of the worksp
 
 ## Marks
 
-`turnback mark <label>` snapshots the whole workspace under a label, for example before letting an agent run unattended. `turnback marks` lists them and `turnback restore <label>` returns to one; a reused label resolves to the newest mark. A turn ID takes precedence over a mark with the same name. Marks are never removed by gc and are unavailable in `edits-only` mode.
+`turnback mark <label>` snapshots the whole workspace under a label, for example before letting an agent run unattended. `turnback marks` lists them and `turnback restore <label>` returns to one; a reused label resolves to the newest mark. New labels matching an existing full or short turn ID are refused, since a turn ID takes precedence over a mark with the same name. To restore an existing mark whose name collides, pass its snapshot `ref` from `turnback marks --json` instead. Marks are never removed by gc and are unavailable in `edits-only` mode.
 
 ## File history and UI
 

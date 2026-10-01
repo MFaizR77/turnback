@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
-import { MAX_FILE_BYTES } from './config.js';
+import path from 'node:path';
+import { canonicalPath, MAX_FILE_BYTES } from './config.js';
+import { shellArg } from './quote.js';
 import type { Hunk } from '../git/shadow.js';
 import type { Store, TurnSummary } from './store.js';
 
@@ -50,8 +52,13 @@ export function blameFile(store: Store, absPath: string): BlameLine[] {
   let disk: Buffer;
   try {
     disk = readFileSync(store.workspace.abs(rel));
-  } catch {
-    throw new Error(`${rel} is not on disk. To bring back a deleted file, run: turnback recover ${rel}`);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'EISDIR' || store.workspace.stat(rel)?.isDirectory()) throw new Error(`${rel} is a directory; blame shows text files only.`);
+    if (code === 'EACCES' || code === 'EPERM') throw new Error(`Cannot read ${rel}: permission denied.`);
+    if (code !== 'ENOENT') throw error;
+    const file = shellArg(path.relative(canonicalPath(process.cwd()), store.workspace.abs(rel)).split(path.sep).join('/'));
+    throw new Error(`${rel} is not on disk.${file ? ` To bring back a deleted file, run: turnback recover ${file}` : ''}`);
   }
   if (disk.length > MAX_FILE_BYTES || disk.subarray(0, 8000).includes(0)) {
     throw new Error('Binary or large file; blame shows text files only.');

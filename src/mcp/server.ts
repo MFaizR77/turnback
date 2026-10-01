@@ -113,7 +113,7 @@ export function createServer(): McpServer {
       const turn = found.turn && store.summarize(found.turn, []);
       return result(
         { target: found.ref, paths: [rel], time: found.entry.time, turn: turn && { id: turn.id, agent: turn.agent, time: turn.time, prompt: turn.prompt } },
-        `Found a version of ${rel} from ${turn ? `turn "${turn.prompt ?? turn.id}" (${turn.agent})` : `the snapshot of ${found.entry.time}`}. Call restore with target ${found.ref} and paths ["${rel}"] to preview bringing it back.`,
+        `Found a version of ${rel} from ${turn ? `${found.entry.kind === 'baseline' ? 'just before ' : ''}turn "${turn.prompt ?? turn.id}" (${turn.agent})` : `the snapshot of ${found.entry.time}`}. Call restore with target ${found.ref} and paths ["${rel}"] to preview bringing it back.`,
       );
     } catch (e) { return failure(e); }
   });

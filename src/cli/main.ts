@@ -83,9 +83,13 @@ function needsWarm(event: HookEvent): boolean {
 
 function runRestore(store: Store, operation: Operation, args: Args): void {
   const step = args.values.get('--before-step');
+  const n = Number(step);
+  if (args.flags.has('--before-step') || step !== undefined && (!step.trim() || !Number.isSafeInteger(n) || n < 1)) {
+    throw new Error('--before-step must be a step number from turnback steps <turn>');
+  }
   const target = operation === 'undo' ? undoTarget(store)
     : operation === 'redo' ? redoTarget(store)
-    : step !== undefined && args.positional[0] ? store.stepRef(args.positional[0], Number(step))
+    : step !== undefined && args.positional[0] ? store.stepRef(args.positional[0], n)
     : args.positional[0];
   if (!target) throw new Error(operation === 'restore' ? 'Missing target turn or snapshot' : `Nothing to ${operation}`);
   const paths = args.paths.length ? args.paths : undefined;
@@ -223,8 +227,13 @@ async function main(): Promise<void> {
       return;
     }
     case 'ui': {
+      const value = args.values.get('--port');
+      const port = Number(value ?? 0);
+      if (args.flags.has('--port') || value !== undefined && !value.trim() || !Number.isInteger(port) || port < 0 || port > 65535) {
+        throw new Error('--port must be a whole number from 0 to 65535');
+      }
       const { startUi } = await import('../ui/server.js');
-      const ui = await startUi(store, Number(args.values.get('--port') ?? 0));
+      const ui = await startUi(store, port);
       output(`Turnback UI: ${ui.url}\nRead-only. Press Ctrl+C to stop.`);
       if (!args.flags.has('--no-open')) openBrowser(ui.url);
       return;
@@ -271,6 +280,7 @@ async function main(): Promise<void> {
       if (range !== undefined) {
         const m = /^(\d+),(\d+)$/.exec(range);
         if (!m || Number(m[1]) < 1 || Number(m[1]) > Number(m[2])) throw new Error('-L needs <start>,<end> with 1 ≤ start ≤ end');
+        if (lines.length && Number(m[1]) > lines.length) throw new Error(`${file} has ${lines.length} ${lines.length === 1 ? 'line' : 'lines'}`);
         lines = lines.filter(l => l.line >= Number(m[1]) && l.line <= Number(m[2]));
       }
       if (args.flags.has('--json')) {
@@ -325,7 +335,7 @@ async function main(): Promise<void> {
         return;
       }
       const mark = store.marks().find(m => m.ref === found.ref);
-      const from = found.turn ? describeTurn(found.turn)
+      const from = found.turn ? `${found.entry.kind === 'baseline' ? 'just before ' : ''}${describeTurn(found.turn)}`
         : mark ? `mark ${JSON.stringify(mark.label)}`
         : `the snapshot of ${formatTime(found.entry.time)}`;
       applyPlan(store, 'restore', found.ref, [abs], `Recover ${store.workspace.relative(abs)} from ${from}`, args, isAgentTurn(found.turn));

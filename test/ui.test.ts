@@ -70,8 +70,8 @@ it('never inserts data as HTML', async () => {
   expect(html).toContain('api/turns');
 });
 
-it('starts from the CLI and prints its URL', async () => {
-  const child = spawn(process.execPath, [CLI, 'ui', '--no-open'], { cwd: p.root, env: { ...process.env, TURNBACK_HOME: p.home }, windowsHide: true });
+it.each([[], ['--port', '0']])('starts from the CLI and prints its URL with port options %j', async (...port) => {
+  const child = spawn(process.execPath, [CLI, 'ui', '--no-open', ...port], { cwd: p.root, env: { ...process.env, TURNBACK_HOME: p.home }, windowsHide: true });
   try {
     const url = await new Promise<string>((resolve, reject) => {
       let out = '';

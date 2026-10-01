@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, lstatSync, renameSync
 import path from 'node:path';
 import {
   EDITS_ONLY_BYTES, editsOnlyFiles, GC_INTERVAL_MS, LOCK_TIMEOUT_MS, PROBE_TTL_MS, RETENTION, WARM_WAIT_MS,
-  workspaceDataDir, workspaceRoot,
+  canonicalPath, pathKey, workspaceDataDir, workspaceRoot,
 } from './config.js';
 import { Journal, turnKey } from './journal.js';
 import { QUOTE_SAFE } from './quote.js';
@@ -264,12 +264,16 @@ export class Store {
 
   /** Turns whose changes include a file, or any file under a folder; newest first. */
   fileHistory(absPath: string): TurnSummary[] {
-    const rel = this.workspace.relative(absPath);
-    if (!rel) throw new Error(`Path outside workspace: ${absPath}`);
+    const rel = pathKey(canonicalPath(path.resolve(this.root, absPath))) === pathKey(this.root) ? '' : this.workspace.relative(absPath);
+    if (rel === undefined) throw new Error(`Path outside workspace: ${absPath}`);
+    const key = pathKey(this.workspace.abs(rel));
     return this.turns().flatMap(turn => {
       if (!turn.end) return [];
       const names = this.repo.diffNames(turn.baseline, turn.end);
-      return names.some(n => n === rel || n.startsWith(rel + '/')) ? [this.summarize(turn, names)] : [];
+      return names.some(n => {
+        const changed = pathKey(this.workspace.abs(n));
+        return rel === '' || changed === key || changed.startsWith(key + '/');
+      }) ? [this.summarize(turn, names)] : [];
     });
   }
 
@@ -285,6 +289,7 @@ export class Store {
     const name = label.trim();
     if (!name) throw new Error('A mark needs a label');
     if (!QUOTE_SAFE.test(name)) throw new Error('Mark labels may contain letters, digits, spaces, and _ . : / @ # + , = - only, so they can be pasted into a shell');
+    if (this.findTurn(name)) throw new Error(`Mark label "${name}" matches a turn ID; choose a different label`);
     if (this.mode() === 'edits-only') throw new Error('Marks are unavailable in edits-only mode: only edited paths are snapshotted');
     const entry = this.snapshot('mark', { agent: 'turnback', session: 'mark', turn: name });
     if (entry.status !== 'ok' || !entry.ref) throw new Error(`Mark failed: ${entry.note ?? entry.status}`);
