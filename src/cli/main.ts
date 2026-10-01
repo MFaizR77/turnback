@@ -130,18 +130,26 @@ function runCommand(rest: string[]): void {
 function applyPlan(store: Store, operation: Operation, target: string, paths: string[] | undefined, title: string, args: Args, agentTurn: boolean): void {
   const plan = planRestore(store, target, paths);
   const json = args.flags.has('--json');
-  output(json
-    ? { target, scope: plan.scope, actions: plan.actions, skippedLarge: plan.skippedLarge }
-    : formatPlan(title, plan, args.flags.has('--yes') && !args.flags.has('--dry-run')));
-  if (args.flags.has('--dry-run')) return;
-  if (!args.flags.has('--yes')) {
-    output('Use --yes to apply this plan.');
+  const dryRun = args.flags.has('--dry-run');
+  const yes = args.flags.has('--yes');
+  const planData = { target, scope: plan.scope, actions: plan.actions, skippedLarge: plan.skippedLarge };
+
+  if (dryRun || !yes) {
+    output(json ? planData : formatPlan(title, plan, false));
+    if (!dryRun && !json) output('Use --yes to apply this plan.');
     return;
   }
+
+  if (!json) output(formatPlan(title, plan, true));
   const result = applyRestore(store, target, { paths, token: plan.token, operation });
   if (json) {
-    output({ applied: result.applied, failed: result.failed, safety: result.safety });
-    if (agentTurn) output('Agent conversation context is not restored; tell the agent what changed.');
+    output({
+      ...planData,
+      applied: result.applied,
+      failed: result.failed,
+      safety: result.safety,
+      ...(agentTurn ? { note: 'Agent conversation context is not restored; tell the agent what changed.' } : {}),
+    });
   } else {
     output(formatRestoreResult(result, operation, agentTurn));
   }
