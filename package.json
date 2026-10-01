@@ -1,6 +1,6 @@
 {
   "name": "turnback",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Undo a coding agent turn, including shell commands and untracked files, via hooks, a CLI, and an MCP server",
   "keywords": [
     "mcp",

@@ -1,7 +1,7 @@
 {
   "name": "turnback",
   "displayName": "Turnback",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "description": "Undo any agent turn, including shell commands and untracked files",
   "author": {
     "name": "MFaizR77",

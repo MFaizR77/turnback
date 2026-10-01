@@ -4,7 +4,7 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { homedir } from 'node:os';
 import path from 'node:path';
 
-export const VERSION = '0.8.0';
+export const VERSION = '0.9.0';
 
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
 export const EDITS_ONLY_BYTES = 2 * 1024 ** 3;
