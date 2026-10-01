@@ -1,4 +1,5 @@
 import { expect, it } from 'vitest';
+import { mkdirSync } from 'node:fs';
 import { record } from '../src/core/recorder.js';
 import { htmlReport, sessionReport } from '../src/core/report.js';
 import { Store } from '../src/core/store.js';
@@ -66,4 +67,21 @@ it('keeps the contents of secret files out of the HTML report', () => {
   expect(html).not.toContain('API_KEY=old');
   expect(html).toContain('visible');
   expect(html).toMatch(/<code>\.env<\/code> <span class="M">modified<\/span> \(content hidden\)/);
+});
+
+it('hides nested credentials and keystores while showing environment template diffs', () => {
+  const p = tempProject('turnback-report-credentials-');
+  mkdirSync(p.file('config'));
+  turn(p, 's1', 't1', 'configure project', () => {
+    p.write('config/.git-credentials', 'private-git-value\n');
+    p.write('config/client.jks', 'private-jks-value\n');
+    p.write('config/client.keystore', 'private-keystore-value\n');
+    p.write('config/.env.example', 'PUBLIC_EXAMPLE=value\n');
+  });
+  const html = htmlReport(new Store(p.root));
+  for (const name of ['.git-credentials', 'client.jks', 'client.keystore']) {
+    expect(html).toContain(`<code>config/${name}</code> <span class="A">added</span> (content hidden)`);
+  }
+  expect(html).not.toContain('private-');
+  expect(html).toContain('PUBLIC_EXAMPLE=value');
 });

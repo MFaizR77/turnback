@@ -163,6 +163,7 @@ it('blames a file and finds a version to recover, leaving the restore to the res
 
     const found = await call(client, 'recover_file', { path: 'a.txt' });
     expect(found.data).toMatchObject({ target: expect.stringMatching(/^refs\/turnback\//), paths: ['a.txt'] });
+    expect(found.content[0].text).toMatch(/^Found a version of a\.txt from just before turn "codex:s:t" \(codex\)\./);
     expect(p.read('a.txt')).toBe('agent');
     const preview = await call(client, 'restore', { target: found.data.target, paths: found.data.paths });
     await call(client, 'restore', { target: found.data.target, paths: found.data.paths, token: preview.data.confirm_token });
@@ -173,3 +174,17 @@ it('blames a file and finds a version to recover, leaving the restore to the res
     await client.close();
   }
 }, 60_000);
+
+it('describes an end snapshot as a version from the completed turn', async () => {
+  p.write('a.txt', 'manual');
+  const client = await connect(new Client({ name: 'test', version: '1.0.0' }));
+  try {
+    const found = await call(client, 'recover_file', { path: 'a.txt' });
+    expect(found.isError).toBeFalsy();
+    expect(found.content[0].text).toMatch(/^Found a version of a\.txt from turn "codex:s:t" \(codex\)\./);
+    expect(found.data).toMatchObject({ paths: ['a.txt'], turn: { id: 'codex:s:t' } });
+    expect(p.read('a.txt')).toBe('manual');
+  } finally {
+    await client.close();
+  }
+}, 15_000);

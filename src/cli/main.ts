@@ -267,6 +267,7 @@ async function main(): Promise<void> {
       if (range !== undefined) {
         const m = /^(\d+),(\d+)$/.exec(range);
         if (!m || Number(m[1]) < 1 || Number(m[1]) > Number(m[2])) throw new Error('-L needs <start>,<end> with 1 ≤ start ≤ end');
+        if (lines.length && Number(m[1]) > lines.length) throw new Error(`${file} has ${lines.length} ${lines.length === 1 ? 'line' : 'lines'}`);
         lines = lines.filter(l => l.line >= Number(m[1]) && l.line <= Number(m[2]));
       }
       if (args.flags.has('--json')) {
@@ -321,7 +322,7 @@ async function main(): Promise<void> {
         return;
       }
       const mark = store.marks().find(m => m.ref === found.ref);
-      const from = found.turn ? describeTurn(found.turn)
+      const from = found.turn ? `${found.entry.kind === 'baseline' ? 'just before ' : ''}${describeTurn(found.turn)}`
         : mark ? `mark ${JSON.stringify(mark.label)}`
         : `the snapshot of ${formatTime(found.entry.time)}`;
       applyPlan(store, 'restore', found.ref, [abs], `Recover ${store.workspace.relative(abs)} from ${from}`, args, isAgentTurn(found.turn));
