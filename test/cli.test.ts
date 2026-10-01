@@ -196,6 +196,7 @@ it('recovers one deleted file through the CLI', () => {
   const p = tempProject('turnback-recover-cli-');
   p.write('gone.txt', 'keep\n');
   p.write('other.txt', 'o\n');
+  expect(cli(p.root, p.home, ['warm']).status).toBe(0);
   const send = (payload: object) => cli(p.root, p.home, ['hook', 'claude'], JSON.stringify({ session_id: 's', cwd: p.root, ...payload }));
   send({ hook_event_name: 'UserPromptSubmit', prompt: 'tidy up' });
   send({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'rm gone.txt other.txt' } });
@@ -245,6 +246,45 @@ it('records any command as a turn with turnback run, and undoes it', () => {
   expect(p.read('a.txt')).toBe('a\n');
   expect(existsSync(p.file('b.txt'))).toBe(false);
 }, 30_000);
+
+it.each(['codegen', '', '-label'])('turnback run parses a leading label %j without a separator and preserves command arguments', label => {
+  const p = tempProject('turnback-run-label-');
+  p.write('command.cjs', "require('node:fs').writeFileSync('args.json', JSON.stringify(process.argv.slice(2)))");
+  const args = ['--label', 'child label', 'a&b', '%OS%'];
+  const run = cli(p.root, p.home, ['run', '--label', label, process.execPath, 'command.cjs', ...args]);
+  expect(run.status).toBe(0);
+  expect(JSON.parse(p.read('args.json'))).toEqual(args);
+  const list = JSON.parse(cli(p.root, p.home, ['list', '--json']).stdout);
+  expect(list).toHaveLength(1);
+  expect(list[0]).toMatchObject({ agent: 'manual', changedFiles: 1 });
+  expect(list[0].prompt).toBe(label || undefined);
+});
+
+it('turnback run accepts a labeled node command without a separator', () => {
+  const p = tempProject('turnback-run-node-');
+  const run = cli(p.root, p.home, ['run', '--label', 'codegen', process.execPath, '-e',
+    "require('node:fs').writeFileSync('made.txt', 'made')"]);
+  expect(run.status).toBe(0);
+  expect(p.read('made.txt')).toBe('made');
+  const list = JSON.parse(cli(p.root, p.home, ['list', '--json']).stdout);
+  expect(list).toHaveLength(1);
+  expect(list[0]).toMatchObject({ agent: 'manual', prompt: 'codegen', changedFiles: 1 });
+});
+
+it.each([
+  ['--help'], ['--label'], ['--label', 'x'], ['--label', 'x', '--help'],
+  ['--'], ['--', '--help'], ['--label', '--', 'node', '-v'], [''],
+  ['-unknown > blocked.txt'],
+])('turnback run rejects invalid command arguments %j without recording a turn', (...args) => {
+  const p = tempProject('turnback-run-invalid-');
+  const run = cli(p.root, p.home, ['run', ...args]);
+  expect(run.status).toBe(2);
+  expect(run.stderr).toBe('Usage: turnback run [--label <text>] -- <command...>\n');
+  expect(run.stdout).toBe('');
+  expect(existsSync(p.file('blocked.txt'))).toBe(false);
+  expect(new Store(p.root).entries()).toEqual([]);
+  expect(JSON.parse(cli(p.root, p.home, ['list', '--json']).stdout)).toEqual([]);
+});
 
 it('turnback run passes the exit code through and still records the turn', () => {
   const p = tempProject('turnback-run-fail-');
@@ -331,11 +371,11 @@ it('reports a blame range beyond the file without calling a nonempty file empty'
   expect(JSON.parse(cli(p.root, p.home, ['blame', 'empty.txt', '-L', '1,20', '--json']).stdout)).toEqual([]);
 }, 30_000);
 
-it('passes arguments through turnback run unchanged', () => {
+it.each([true, false])('passes arguments through turnback run unchanged (separator: %s)', separator => {
   const p = tempProject('turnback-run-args-');
   p.write('a.txt', 'a\n');
   const args = ['%OS%', 'a b\\', 'xy', 'C:\\Program Files\\x\\', 'q"uote', '\\d+', 'a&b', '$HOME', "it's", '(x)'];
-  const r = cli(p.root, p.home, ['run', '--', process.execPath, '-e', 'process.stdout.write(JSON.stringify(process.argv.slice(1)))', ...args]);
+  const r = cli(p.root, p.home, ['run', ...separator ? ['--'] : [], process.execPath, '-e', 'process.stdout.write(JSON.stringify(process.argv.slice(1)))', ...args]);
   expect(JSON.parse(r.stdout)).toEqual(args);
 }, 30_000);
 

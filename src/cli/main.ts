@@ -101,10 +101,14 @@ const isAgentTurn = (turn?: Turn) => !!turn && turn.agent !== 'manual';
 
 /** `turnback run [--label <text>] -- <command...>`: record any command as one turn. */
 function runCommand(rest: string[]): void {
-  const split = rest.indexOf('--');
-  const own = parseArgs(split < 0 ? [] : rest.slice(0, split));
-  const argv = split < 0 ? rest : rest.slice(split + 1);
-  if (!argv.length) {
+  let split = rest.indexOf('--');
+  if (split < 0) {
+    split = 0;
+    while (rest[split] === '--label' && rest[split + 1] !== undefined) split += 2;
+  }
+  const own = parseArgs(rest.slice(0, split));
+  const argv = rest.slice(split + (rest[split] === '--' ? 1 : 0));
+  if (!argv[0] || argv[0].startsWith('-') || own.flags.has('--label')) {
     process.stderr.write('Usage: turnback run [--label <text>] -- <command...>\n');
     process.exitCode = 2;
     return;
