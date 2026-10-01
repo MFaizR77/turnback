@@ -196,6 +196,7 @@ it('recovers one deleted file through the CLI', () => {
   const p = tempProject('turnback-recover-cli-');
   p.write('gone.txt', 'keep\n');
   p.write('other.txt', 'o\n');
+  expect(cli(p.root, p.home, ['warm']).status).toBe(0);
   const send = (payload: object) => cli(p.root, p.home, ['hook', 'claude'], JSON.stringify({ session_id: 's', cwd: p.root, ...payload }));
   send({ hook_event_name: 'UserPromptSubmit', prompt: 'tidy up' });
   send({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'rm gone.txt other.txt' } });
