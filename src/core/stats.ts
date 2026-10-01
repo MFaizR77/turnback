@@ -30,7 +30,9 @@ export function turnStats(store: Store, days = 7, now = Date.now()): TurnStats {
     if (!recent(turn.time)) continue;
     stats.turns++;
     stats.byAgent[turn.agent] = (stats.byAgent[turn.agent] ?? 0) + 1;
-    stats.commands += store.steps(turn.id).filter(s => s.kind === 'shell').length;
+    for (const e of turn.entries) {
+      if (e.command !== undefined && (e.kind === 'edit' || e.kind === 'shell' || (e.kind === 'baseline' && e.status === 'ok'))) stats.commands++;
+    }
     if (!turn.end) continue;
     for (const change of store.repo.diffNameStatus(turn.baseline, turn.end)) {
       if (change.status === 'A') stats.created++;
