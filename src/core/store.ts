@@ -326,7 +326,7 @@ export class Store {
     const turn = this.findTurn(id);
     if (!turn) throw new Error(`Unknown turn: ${id}`);
     // A failed baseline is followed by an `unprotected` entry for the same tool call.
-    const calls = turn.entries.filter(e => e.kind === 'edit' || e.kind === 'shell' || (e.kind === 'baseline' && e.status === 'ok'));
+    const calls = turn.entries.filter(isStepEntry);
     const scoped = this.mode() === 'full';
     let shellSeen = false, gap = false;
     return calls.map((e, i) => {
@@ -424,6 +424,11 @@ export class Store {
   private expiredTurns(): string[] {
     try { return JSON.parse(readFileSync(this.expiredFile, 'utf8')); } catch { return []; }
   }
+}
+
+/** Which journal entries count as steps of a turn, shared by `Store.steps` and `turnStats`. */
+export function isStepEntry(e: Entry): boolean {
+  return e.kind === 'edit' || e.kind === 'shell' || (e.kind === 'baseline' && e.status === 'ok');
 }
 
 export function originFields(o: EntryOrigin): EntryOrigin {
