@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it } from 'vitest';
@@ -37,13 +38,42 @@ it('prefers a turn over a mark with the same name', () => {
   const p = tempProject('turnback-mark-turn-');
   p.write('a.txt', 'old');
   const store = new Store(p.root);
+  p.write('a.txt', 'checkpoint');
+  const mark = store.mark('t');
+  p.write('a.txt', 'old');
   hook(p.root, 'edit', 't', { paths: [p.file('a.txt')] });
   p.write('a.txt', 'agent');
   hook(p.root, 'turn-end', 't');
-  store.mark('t');
   p.write('a.txt', 'later');
   applyRestore(store, 't');
   expect(p.read('a.txt')).toBe('old');
+  p.write('a.txt', 'later');
+  applyRestore(store, mark.ref);
+  expect(p.read('a.txt')).toBe('checkpoint');
+});
+
+it('refuses labels matching a full or short turn ID before taking a snapshot', () => {
+  const p = tempProject('turnback-mark-collision-');
+  p.write('a.txt', 'old');
+  const store = new Store(p.root);
+  hook(p.root, 'edit', 't', { paths: [p.file('a.txt')] });
+  p.write('a.txt', 'agent');
+  hook(p.root, 'turn-end', 't');
+  const turn = store.turns()[0];
+  const entries = store.entries();
+  const refs = () => spawnSync('git', [`--git-dir=${store.repo.gitDir}`, 'for-each-ref', 'refs/turnback'], { encoding: 'utf8', windowsHide: true }).stdout;
+  const before = refs();
+  for (const label of ['t', `  ${turn.id}  `]) {
+    expect(() => store.mark(label)).toThrow(`Mark label "${label.trim()}" matches a turn ID; choose a different label`);
+    expect(store.entries()).toEqual(entries);
+    expect(refs()).toBe(before);
+    expect(store.marks()).toEqual([]);
+    expect(p.read('a.txt')).toBe('agent');
+  }
+  expect(store.mark('checkpoint-t')).toMatchObject({ label: 'checkpoint-t' });
+  p.write('a.txt', 'later');
+  applyRestore(store, 'checkpoint-t');
+  expect(p.read('a.txt')).toBe('agent');
 });
 
 it('keeps marks through gc and refuses empty labels and edits-only mode', () => {

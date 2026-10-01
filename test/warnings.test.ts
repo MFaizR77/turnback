@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it } from 'vitest';
+import { SENSITIVE } from '../src/core/warnings.js';
 import { CLI, tempProject } from './helpers.js';
 
 function claudeTurn(p: ReturnType<typeof tempProject>, change: () => void) {
@@ -19,6 +20,37 @@ function manyFiles(p: ReturnType<typeof tempProject>, n: number) {
   mkdirSync(p.file('src'));
   for (let i = 0; i < n; i++) p.write(`src/f${i}.txt`, String(i));
 }
+
+it.each(['.env', '.env.local', '.ENV.PRODUCTION', '.env.example.local', '.env.examples', 'id_ed25519', 'server.pem', 'credentials.json', '.npmrc', '.netrc', '.git-credentials', 'client.jks', 'client.KEYSTORE'])('recognizes secret file %s', name => {
+  expect(SENSITIVE.test(name)).toBe(true);
+});
+
+it.each(['.env.example', '.ENV.SAMPLE', '.env.template', 'env.example', '.git-credentials.example', 'client.jks.example', 'client.keystore.backup', 'README.md'])('does not flag ordinary or template file %s', name => {
+  expect(SENSITIVE.test(name)).toBe(false);
+});
+
+it('warns for nested credential files but stays quiet for environment templates', () => {
+  const p = tempProject('turnback-warn-template-');
+  expect(JSON.parse(claudeTurn(p, () => {
+    p.write('.env.example', 'A=example\n');
+    p.write('.env.sample', 'A=sample\n');
+    p.write('.env.template', 'A=template\n');
+  }).stdout)).toEqual({});
+
+  const q = tempProject('turnback-warn-credentials-');
+  mkdirSync(q.file('config'));
+  const result = claudeTurn(q, () => {
+    q.write('config/.git-credentials', 'private-git-value\n');
+    q.write('config/client.jks', 'private-jks-value\n');
+    q.write('config/client.keystore', 'private-keystore-value\n');
+  });
+  expect(result.status).toBe(0);
+  const message = JSON.parse(result.stdout).systemMessage;
+  expect(message).toContain('config/.git-credentials');
+  expect(message).toContain('config/client.jks');
+  expect(message).toContain('config/client.keystore');
+  expect(message).not.toContain('private-');
+}, 90_000);
 
 it('warns when a turn deletes many files, without a decision field', () => {
   const p = tempProject('turnback-warn-');
