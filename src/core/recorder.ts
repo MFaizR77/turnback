@@ -143,7 +143,7 @@ function takeForeignRoots(home: Store, event: HookEvent): string[] {
 }
 
 /** Adapters fill `command` only for shell events. */
-const hadShell = (turn: Entry[]) => turn.some(e => e.command !== undefined);
+export const hadShell = (turn: Entry[]) => turn.some(e => e.command !== undefined);
 
 /** Other workspaces this turn edited, read before the end of the turn consumes the list. */
 export function pendingForeignRoots(event: HookEvent): string[] {

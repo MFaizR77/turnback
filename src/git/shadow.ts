@@ -1,7 +1,8 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { deflateSync } from 'node:zlib';
 import { EXCLUDED_DIRS, importBatchBytes, MAX_FILE_BYTES } from '../core/config.js';
 import { blobId } from '../workspace/workspace.js';
 
@@ -25,6 +26,15 @@ export interface TreeItem {
 }
 
 const REF_PREFIX = 'refs/turnback/s/';
+const COMMIT_IDENTITY = 'Turnback <turnback@localhost>';
+
+/** Write through a temporary file and a rename, so readers never see a partial file. */
+function writeAtomic(file: string, content: string | Buffer): void {
+  mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  writeFileSync(tmp, content);
+  renameSync(tmp, file);
+}
 const RAW_ATTRIBUTES = '* -text -eol -filter -ident -working-tree-encoding\n';
 
 /**
@@ -148,14 +158,30 @@ export class ShadowRepo {
     return ref;
   }
 
-  /** Save the index as a parentless commit and give it a new ref. */
+  /**
+   * Save the index as a parentless commit and give it a new ref. Only `write-tree` is a git
+   * process: the commit object and the ref are small files written here, which saves two process
+   * starts per hook (about 50–130 ms each on Windows). The shadow repo is private to Turnback and
+   * written under its lock, and new refs are always new names, so no ref update can race.
+   */
   commit(message: string): string {
     const tree = this.run(['write-tree']).trim();
-    const commit = this.run(['commit-tree', tree, '-m', message]).trim();
+    const commit = this.writeObject('commit', tree.length, Buffer.from(
+      `tree ${tree}\nauthor ${COMMIT_IDENTITY} ${Math.floor(Date.now() / 1000)} +0000\n` +
+      `committer ${COMMIT_IDENTITY} ${Math.floor(Date.now() / 1000)} +0000\n\n${message}\n`));
     const ref = REF_PREFIX + randomUUID().replaceAll('-', '');
-    this.run(['update-ref', ref, commit]);
+    writeAtomic(path.join(this.gitDir, ref), `${commit}\n`);
     writeFileSync(this.indexRefFile, ref);
     return ref;
+  }
+
+  /** Store a loose object the way git does (zlib of `<type> <size>\0<body>`) and return its ID. */
+  private writeObject(type: string, oidLength: number, body: Buffer): string {
+    const raw = Buffer.concat([Buffer.from(`${type} ${body.length}\0`), body]);
+    const oid = createHash(oidLength === 64 ? 'sha256' : 'sha1').update(raw).digest('hex');
+    const file = path.join(this.gitDir, 'objects', oid.slice(0, 2), oid.slice(2));
+    if (!existsSync(file)) writeAtomic(file, deflateSync(raw));
+    return oid;
   }
 
   /**
