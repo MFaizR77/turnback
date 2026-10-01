@@ -32,4 +32,6 @@ Every command prints text for people. Where noted, `--json` prints the raw data 
 
 Restoring changes project files; the agent's conversation is not restored, so tell the agent what changed.
 
+For restore commands, --json without --yes (or with --dry-run) prints only the plan. With --yes, it prints one object combining the plan and result fields (applied, failed, and safety); an operation on an agent turn also includes a note that the conversation is not restored.
+
 Set `{"prompts": false}` in `~/.turnback/config.json` to stop recording prompts.

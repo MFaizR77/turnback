@@ -402,9 +402,41 @@ it('prints the version with --version, -v, and version', () => {
   }
 }, 30_000);
 
+it('returns a single JSON object with a note when applying an agent turn', () => {
+  const p = tempProject('turnback-agent-json-');
+  p.write('a.txt', 'before\n');
+  const send = (payload: object) => cli(p.root, p.home, ['hook', 'claude'], JSON.stringify({ session_id: 's', cwd: p.root, ...payload }));
+
+  send({ hook_event_name: 'UserPromptSubmit', prompt: 'JSON restore' });
+  send({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'rm a.txt' } });
+  rmSync(p.file('a.txt'));
+  send({ hook_event_name: 'Stop' });
+
+  const plan = cli(p.root, p.home, ['undo', '--json']);
+  expect(plan.status).toBe(0);
+  expect(JSON.parse(plan.stdout).actions).toHaveLength(1);
+  expect(plan.stdout).not.toContain('Use --yes');
+
+  const dryRun = cli(p.root, p.home, ['undo', '--dry-run', '--json']);
+  expect(dryRun.status).toBe(0);
+  expect(JSON.parse(dryRun.stdout).actions).toHaveLength(1);
+
+  const applied = cli(p.root, p.home, ['undo', '--yes', '--json']);
+  expect(applied.status).toBe(0);
+  const result = JSON.parse(applied.stdout);
+  expect(result.applied).toContain('a.txt');
+  expect(result.failed).toEqual([]);
+  expect(result.note).toBe('Agent conversation context is not restored; tell the agent what changed.');
+  expect(p.read('a.txt')).toBe('before\n');
+}, 30_000);
+
 it('leaves the agent note out of --json restores of turnback run turns', () => {
   const p = tempProject('turnback-run-json-');
   p.write('a.txt', 'a\n');
   cli(p.root, p.home, ['run', '--', process.execPath, '-e', "require('fs').writeFileSync('a.txt', 'b')"]);
-  expect(cli(p.root, p.home, ['undo', '--yes', '--json']).stdout).not.toContain('conversation');
+  const applied = cli(p.root, p.home, ['undo', '--yes', '--json']);
+  expect(applied.status).toBe(0);
+  const result = JSON.parse(applied.stdout);
+  expect(result.applied).toContain('a.txt');
+  expect(result.note).toBeUndefined();
 }, 30_000);
