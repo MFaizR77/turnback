@@ -181,7 +181,7 @@ it('recovers one deleted file through the CLI', () => {
   send({ hook_event_name: 'Stop' });
 
   const dry = cli(p.root, p.home, ['recover', 'gone.txt', '--dry-run']);
-  expect(dry.stdout).toMatch(/^Recover gone\.txt from turn "tidy up" \(claude, /);
+  expect(dry.stdout).toMatch(/^Recover gone\.txt from just before turn "tidy up" \(claude, /);
   expect(dry.stdout).toMatch(/^ {2}restore +gone\.txt$/m);
   expect(dry.stdout).not.toContain('other.txt');
   expect(cli(p.root, p.home, ['recover', 'gone.txt', '--yes']).status).toBe(0);
@@ -192,6 +192,17 @@ it('recovers one deleted file through the CLI', () => {
   expect(none.status).toBe(1);
   expect(none.stdout).toContain('No snapshot has a version of never.txt');
 }, 30_000);
+
+it('names the completed turn when recovering its end snapshot', () => {
+  const p = tempProject('turnback-recover-end-cli-');
+  const run = cli(p.root, p.home, ['run', '--label', 'create file', '--', process.execPath, '-e', "require('node:fs').writeFileSync('made.txt', 'made')"]);
+  expect(run.status).toBe(0);
+  rmSync(p.file('made.txt'));
+  const dry = cli(p.root, p.home, ['recover', 'made.txt', '--dry-run']);
+  expect(dry.status).toBe(0);
+  expect(dry.stdout).toMatch(/^Recover made\.txt from turn "create file" \(manual, /);
+  expect(existsSync(p.file('made.txt'))).toBe(false);
+});
 
 it('records any command as a turn with turnback run, and undoes it', () => {
   const p = tempProject('turnback-run-');
