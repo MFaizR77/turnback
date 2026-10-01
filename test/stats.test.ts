@@ -1,5 +1,5 @@
 import { rmSync } from 'node:fs';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { formatStats, statsCard, turnStats } from '../src/core/stats.js';
 import { applyRestore, undoTarget } from '../src/core/restore.js';
 import { Store } from '../src/core/store.js';
@@ -34,6 +34,45 @@ it('leaves out turns older than the window', () => {
   const s = turnStats(twoTurns(), 7, Date.now() + 8 * 24 * 60 * 60 * 1000);
   expect(s.turns).toBe(0);
   expect(s.restores).toBe(0);
+});
+
+it('counts shell steps from existing turn entries without re-reading each turn', () => {
+  const p = tempProject('turnback-stats-commands-');
+  hook(p.root, 'shell', 't1', { command: '' });
+  hook(p.root, 'shell', 't1', { command: 'echo later' });
+  hook(p.root, 'edit', 't2', { paths: [p.file('a.txt')] });
+  hook(p.root, 'shell', 't2', { command: 'echo second turn' });
+  const store = new Store(p.root);
+  const expected = store.turns().reduce((n, turn) => n + store.steps(turn.id).filter(s => s.kind === 'shell').length, 0);
+  expect(expected).toBe(3);
+  const steps = vi.spyOn(store, 'steps');
+  const entries = vi.spyOn(store, 'entries');
+  try {
+    expect(turnStats(store).commands).toBe(expected);
+    expect(steps).not.toHaveBeenCalled();
+    expect(entries).toHaveBeenCalledTimes(2);
+  } finally {
+    steps.mockRestore();
+    entries.mockRestore();
+  }
+});
+
+it('keeps shell counting consistent with step status and command presence', () => {
+  const p = tempProject('turnback-stats-step-kinds-');
+  hook(p.root, 'shell', 't1', { command: 'echo baseline' });
+  const store = new Store(p.root);
+  for (const entry of [
+    { kind: 'baseline', status: 'failed', command: 'failed baseline' },
+    { kind: 'unprotected', status: 'failed', command: 'unprotected' },
+    { kind: 'shell', status: 'failed', command: '' },
+    { kind: 'shell', status: 'ok' },
+    { kind: 'edit', status: 'ok', command: 'edit with command' },
+    { kind: 'turn-end', status: 'ok', command: 'not a step' },
+  ] as const) {
+    store.log({ agent: 'codex', session: 's', turn: 't1', ...entry });
+  }
+  expect(store.steps('t1').filter(s => s.kind === 'shell')).toHaveLength(3);
+  expect(turnStats(store).commands).toBe(3);
 });
 
 it.each(['restore', 'undo'] as const)('counts files brought back by a partly failed %s', kind => {
