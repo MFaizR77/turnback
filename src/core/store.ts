@@ -285,6 +285,7 @@ export class Store {
     const name = label.trim();
     if (!name) throw new Error('A mark needs a label');
     if (!QUOTE_SAFE.test(name)) throw new Error('Mark labels may contain letters, digits, spaces, and _ . : / @ # + , = - only, so they can be pasted into a shell');
+    if (this.findTurn(name)) throw new Error(`Mark label "${name}" matches a turn ID; choose a different label`);
     if (this.mode() === 'edits-only') throw new Error('Marks are unavailable in edits-only mode: only edited paths are snapshotted');
     const entry = this.snapshot('mark', { agent: 'turnback', session: 'mark', turn: name });
     if (entry.status !== 'ok' || !entry.ref) throw new Error(`Mark failed: ${entry.note ?? entry.status}`);
