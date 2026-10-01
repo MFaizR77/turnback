@@ -321,7 +321,7 @@ async function main(): Promise<void> {
         return;
       }
       const mark = store.marks().find(m => m.ref === found.ref);
-      const from = found.turn ? describeTurn(found.turn)
+      const from = found.turn ? `${found.entry.kind === 'baseline' ? 'just before ' : ''}${describeTurn(found.turn)}`
         : mark ? `mark ${JSON.stringify(mark.label)}`
         : `the snapshot of ${formatTime(found.entry.time)}`;
       applyPlan(store, 'restore', found.ref, [abs], `Recover ${store.workspace.relative(abs)} from ${from}`, args, isAgentTurn(found.turn));
