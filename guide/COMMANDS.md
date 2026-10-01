@@ -18,7 +18,7 @@ Every command prints text for people. Where noted, `--json` prints the raw data 
 | `log <file\|folder> [--json]` | Turns that changed that path. |
 | `blame <file> [-L <start>,<end>] [--json]` | For each line of a text file, the turn that last wrote it (number as in `list`, agent, time, prompt), `(before Turnback)`, or `(outside a turn)` for changes made between turns. Turns removed by `gc` fall back to `(before Turnback)`. |
 | `search <text> [--json]` | Turns whose prompt, command, or paths match. |
-| `mark <label>` / `marks [--json]` | Saves the whole workspace as a checkpoint that `restore <label>` returns to. |
+| `mark <label>` / `marks [--json]` | Saves the whole workspace as a checkpoint that `restore <label>` returns to. Labels matching an existing full or short turn ID are refused; choose a different label. Existing marks can also be restored by their snapshot ref from `marks --json`. |
 | `ui [--port <n>] [--no-open]` | Read-only timeline of turns, steps, and diffs in the browser. |
 | `report [--session <id>] [--html [--out <file>]]` | Markdown summary of the latest session, for a PR description or an audit. `--html` writes a self-contained page with each turn's diff instead. |
 | `compare <a> <b> [--json]` | How two turns' results differ, for example two agents given the same task. |
