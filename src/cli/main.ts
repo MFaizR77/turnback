@@ -348,7 +348,7 @@ async function main(): Promise<void> {
 }
 
 function warmInBackground(cwd: string): void {
-  spawn(process.execPath, [CLI, 'warm'], { cwd, detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  spawn(process.execPath, [CLI, 'warm'], { cwd, detached: true, stdio: 'ignore', windowsHide: true }).on('error', () => {}).unref();
 }
 
 /** Open a URL in the default browser; if that fails, the user opens the printed URL by hand. */

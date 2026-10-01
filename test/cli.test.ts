@@ -408,3 +408,11 @@ it('leaves the agent note out of --json restores of turnback run turns', () => {
   cli(p.root, p.home, ['run', '--', process.execPath, '-e', "require('fs').writeFileSync('a.txt', 'b')"]);
   expect(cli(p.root, p.home, ['undo', '--yes', '--json']).stdout).not.toContain('conversation');
 }, 30_000);
+
+it('a hook whose cwd does not exist still exits cleanly', () => {
+  const p = tempProject('turnback-missing-cwd-');
+  const missing = path.join(p.root, 'gone');
+  const r = cli(p.root, p.home, ['hook', 'claude'], JSON.stringify({ hook_event_name: 'UserPromptSubmit', session_id: 's', cwd: missing, prompt: 'x' }));
+  expect(r.status).toBe(0);
+  expect(r.stderr).not.toMatch(/Unhandled|ENOENT/);
+}, 30_000);
