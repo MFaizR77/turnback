@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { existsSync, mkdirSync, readdirSync, readFileSync, lstatSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
-  EDITS_ONLY_BYTES, editsOnlyFiles, GC_INTERVAL_MS, LOCK_TIMEOUT_MS, PROBE_TTL_MS, RETENTION, WARM_WAIT_MS,
+  COMPACT_LOOSE, EDITS_ONLY_BYTES, editsOnlyFiles, GC_INTERVAL_MS, LOCK_TIMEOUT_MS, PROBE_TTL_MS, RETENTION, WARM_WAIT_MS,
   canonicalPath, pathKey, workspaceDataDir, workspaceRoot,
 } from './config.js';
 import { Journal, turnKey } from './journal.js';
@@ -30,6 +30,8 @@ export interface GcOptions {
   now?: number;
   keepDays?: number;
   keepTurns?: number;
+  /** Pack the shadow repo even when nothing expired and it is under the limits. */
+  compact?: boolean;
 }
 
 /** All Turnback data for one workspace: journal, shadow repo, and recording mode. */
@@ -383,7 +385,7 @@ export class Store {
    * Delete turns older than 7 days that are not among the last 50 turns.
    * Refs still used by other turns or by internal Turnback snapshots are kept.
    */
-  gc({ now = Date.now(), keepDays = RETENTION.days, keepTurns = RETENTION.turns }: GcOptions = {}) {
+  gc({ now = Date.now(), keepDays = RETENTION.days, keepTurns = RETENTION.turns, compact = false }: GcOptions = {}) {
     return this.locked(() => {
       const turns = this.turns();
       const cutoff = now - keepDays * 24 * 60 * 60 * 1000;
@@ -404,10 +406,17 @@ export class Store {
       if (expired.length) {
         writeFileSync(this.expiredFile, JSON.stringify([...new Set([...this.expiredTurns(), ...expiredIds])]));
       }
-      if (deleted.size) this.repo.prune();
-      this.log({ agent: 'turnback', session: 'gc', turn: 'gc', kind: 'gc', status: 'ok', note: `Expired ${expired.length} turns` });
-      return { expired: expired.length, deletedRefs: deleted.size };
+      // Packing also removes what deleted refs left behind and leftovers of interrupted writes.
+      const compacted = compact || deleted.size > 0 || this.needsCompaction();
+      if (compacted) this.repo.prune();
+      this.log({ agent: 'turnback', session: 'gc', turn: 'gc', kind: 'gc', status: 'ok', note: `Expired ${expired.length} turns${compacted ? '; packed' : ''}` });
+      return { expired: expired.length, deletedRefs: deleted.size, compacted };
     });
+  }
+
+  private needsCompaction(): boolean {
+    const stats = this.repo.objectStats();
+    return stats.garbage > 0 || stats.loose >= COMPACT_LOOSE.count || stats.looseBytes >= COMPACT_LOOSE.bytes;
   }
 
   /** Run `gc` if the last one was more than 24 hours ago. */

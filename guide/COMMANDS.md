@@ -26,7 +26,7 @@ Every command prints text for people. Where noted, `--json` prints the raw data 
 | `export <turn...> --commit [--message <text>]` | Commits just those turns' files to your repository with the prompt as message, and refuses if they changed since. It is the only command that writes to your own git repository. |
 | `stats [--days <n>] [--json] [--svg <file>]` | What agents did in this workspace over the last N days (default 7): turns per agent, files created, changed, and deleted, shell commands, and files brought back by restores. `--svg` writes a 1200×630 card to share. |
 | `status [--json]` | Workspace, mode, storage, and any failed or skipped snapshots. |
-| `gc` | Cleans up turns older than 7 days that are outside the last 50. Runs automatically at most once a day. |
+| `gc` | Cleans up turns older than 7 days that are outside the last 50, then packs the shadow repo and removes leftovers of interrupted writes. Runs automatically at most once a day; the automatic run packs only when something expired, a write left leftovers, or loose objects pass 1,000 or 32 MB. |
 | `--version` | Prints the installed version (also `-v` and `version`). |
 | `mcp` | Starts the stdio MCP server (see [MCP](MCP.md)). |
 

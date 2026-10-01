@@ -208,7 +208,7 @@ async function main(): Promise<void> {
       output(args.flags.has('--json') ? store.status() : formatStatus(store.status()));
       return;
     case 'gc':
-      output(store.gc());
+      output(store.gc({ compact: true }));
       return;
     case 'steps': {
       const id = args.positional[0];

@@ -18,6 +18,8 @@ export const LOCK_STALE_MS = 60_000;
 export const WARM_WAIT_MS = 30_000;
 export const GC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const RETENTION = { days: 7, turns: 50 };
+/** Daily gc packs the shadow repo once loose objects pass either limit, or when an interrupted write left garbage. */
+export const COMPACT_LOOSE = { count: 1000, bytes: 32 * 1024 * 1024 };
 /** Probe snapshots (from MCP diff_range) older than this are removed by gc. */
 export const PROBE_TTL_MS = 24 * 60 * 60 * 1000;
 

@@ -31,6 +31,14 @@ const RAW_ATTRIBUTES = '* -text -eol -filter -ident -working-tree-encoding\n';
  * Separate bare git repo (`GIT_DIR`) whose work-tree is the project folder.
  * The user's own `.git` repo is never touched.
  */
+export interface ObjectStats {
+  loose: number;
+  looseBytes: number;
+  packBytes: number;
+  garbage: number;
+  garbageBytes: number;
+}
+
 export class ShadowRepo {
   readonly gitDir: string;
   private readonly indexRefFile: string;
@@ -175,6 +183,22 @@ export class ShadowRepo {
 
   prune(): void {
     this.run(['gc', '--prune=now', '--quiet']);
+  }
+
+  /** Loose objects and their size, plus garbage (such as `tmp_pack_*` left by an interrupted write), from `git count-objects`. */
+  objectStats(): ObjectStats {
+    const stats = new Map(this.run(['count-objects', '-v']).split('\n').map(line => {
+      const [key, value] = line.split(': ');
+      return [key, Number(value)] as const;
+    }));
+    const kib = (key: string) => (stats.get(key) ?? 0) * 1024;
+    return {
+      loose: stats.get('count') ?? 0,
+      looseBytes: kib('size'),
+      packBytes: kib('size-pack'),
+      garbage: stats.get('garbage') ?? 0,
+      garbageBytes: kib('size-garbage'),
+    };
   }
 
   tree(ref: string): Map<string, TreeItem> {
