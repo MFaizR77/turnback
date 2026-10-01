@@ -123,3 +123,8 @@ export function formatBlame(lines: BlameLine[], numbers: Map<string, number>): s
     return `${shown.padEnd(width)} │ ${String(l.line).padStart(digits)} │ ${l.text}`;
   }).join('\n');
 }
+
+/** What `recover` brings back: `src/app.ts` for a file, `src/ (3 files)` for a folder. */
+export function formatRecoverTarget(rel: string, paths: string[]): string {
+  return paths.length === 1 && paths[0] === rel ? rel : `${rel}/ (${paths.length} ${paths.length === 1 ? 'file' : 'files'})`;
+}

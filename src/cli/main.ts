@@ -10,7 +10,7 @@ import { exportCommit, exportPatch } from '../core/export.js';
 import { compareTurns } from '../core/compare.js';
 import { htmlReport, sessionOf, sessionReport } from '../core/report.js';
 import { formatStats, statsCard, turnStats } from '../core/stats.js';
-import { formatBlame, formatConfigFiles, formatMarks, formatPlan, formatRestoreResult, formatStatus, formatSteps, formatTime, formatTurns } from '../core/format.js';
+import { formatBlame, formatConfigFiles, formatMarks, formatPlan, formatRecoverTarget, formatRestoreResult, formatStatus, formatSteps, formatTime, formatTurns } from '../core/format.js';
 import { install, uninstall } from '../agents/install.js';
 import { shellArg } from '../core/quote.js';
 import { pendingForeignRoots, record } from '../core/recorder.js';
@@ -32,7 +32,7 @@ const USAGE = `Usage:
   turnback mark <label> | marks [--json]
   turnback restore <turn|mark|snapshot> [--before-step <n>] [--path <p>...] [--dry-run | --yes] [--json]
   turnback undo | redo [--dry-run | --yes] [--json]
-  turnback recover <file> [--dry-run | --yes] [--json]
+  turnback recover <file|folder> [--dry-run | --yes] [--json]
   turnback run [--label <text>] -- <command...>
   turnback export <turn...> [--out <file.patch>] | --commit [--message <text>]
   turnback report [--session <id>] [--html [--out <file>]]
@@ -282,7 +282,7 @@ async function main(): Promise<void> {
     }
     case 'blame': {
       const file = args.positional[0];
-      if (!file) throw new Error('Missing file');
+      if (!file) throw new Error('Missing file or folder');
       let lines = blameFile(store, path.resolve(file));
       const range = args.values.get('-L');
       if (range !== undefined) {
@@ -334,7 +334,7 @@ async function main(): Promise<void> {
       return;
     case 'recover': {
       const file = args.positional[0];
-      if (!file) throw new Error('Missing file');
+      if (!file) throw new Error('Missing file or folder');
       const abs = path.resolve(file);
       const found = findRecoverable(store, abs);
       if (!found) {
@@ -346,7 +346,8 @@ async function main(): Promise<void> {
       const from = found.turn ? `${found.entry.kind === 'baseline' ? 'just before ' : ''}${describeTurn(found.turn)}`
         : mark ? `mark ${JSON.stringify(mark.label)}`
         : `the snapshot of ${formatTime(found.entry.time)}`;
-      applyPlan(store, 'restore', found.ref, [abs], `Recover ${store.workspace.relative(abs)} from ${from}`, args, isAgentTurn(found.turn));
+      const what = formatRecoverTarget(store.workspace.relative(abs)!, found.paths);
+      applyPlan(store, 'restore', found.ref, found.paths.map(rel => store.workspace.abs(rel)), `Recover ${what} from ${from}`, args, isAgentTurn(found.turn));
       return;
     }
     default:

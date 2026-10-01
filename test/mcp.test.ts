@@ -1,5 +1,6 @@
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
+import { mkdirSync, rmSync } from 'node:fs';
 import { beforeEach, expect, it } from 'vitest';
 import { CLI, hook, tempProject } from './helpers.js';
 
@@ -184,6 +185,26 @@ it('describes an end snapshot as a version from the completed turn', async () =>
     expect(found.content[0].text).toMatch(/^Found a version of a\.txt from turn "codex:s:t" \(codex\)\./);
     expect(found.data).toMatchObject({ paths: ['a.txt'], turn: { id: 'codex:s:t' } });
     expect(p.read('a.txt')).toBe('manual');
+  } finally {
+    await client.close();
+  }
+}, 15_000);
+
+it('finds the changed files of a deleted folder to recover', async () => {
+  mkdirSync(p.file('src'));
+  p.write('src/a.txt', 'a');
+  p.write('src/b.txt', 'b');
+  hook(p.root, 'turn-start', 't2');
+  hook(p.root, 'shell', 't2', { command: 'rm -rf src' });
+  rmSync(p.file('src'), { recursive: true });
+  hook(p.root, 'turn-end', 't2');
+  const client = await connect(new Client({ name: 'test', version: '1.0.0' }));
+  try {
+    const found = await call(client, 'recover_file', { path: 'src' });
+    expect(found.isError).toBeFalsy();
+    expect(found.data).toMatchObject({ paths: ['src/a.txt', 'src/b.txt'], turn: { id: 'codex:s:t2' } });
+    expect(found.content[0].text).toMatch(/^Found a version of src\/ \(2 files\) from just before turn "codex:s:t2" \(codex\)\./);
+    expect(found.content[0].text).toContain('paths ["src/a.txt","src/b.txt"]');
   } finally {
     await client.close();
   }

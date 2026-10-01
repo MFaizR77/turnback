@@ -3,7 +3,7 @@ import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import path from 'node:path';
 import * as z from 'zod/v4';
 import { VERSION } from '../core/config.js';
-import { formatBlame, formatSteps, formatTurns } from '../core/format.js';
+import { formatBlame, formatRecoverTarget, formatSteps, formatTurns } from '../core/format.js';
 import { blameFile } from '../core/blame.js';
 import { compareTurns } from '../core/compare.js';
 import { sessionReport } from '../core/report.js';
@@ -100,8 +100,8 @@ export function createServer(): McpServer {
   });
 
   server.registerTool('recover_file', {
-    description: 'Find the newest snapshot holding a version of one file that differs from the file on disk (for a deleted file, the last one that had it). Nothing is written: pass the returned target and paths to restore to bring it back.',
-    inputSchema: z.object({ path: z.string().describe('File, relative to the workspace or absolute'), workspace: workspaceParam }),
+    description: 'Find the newest snapshot holding a version of one file or folder that differs from disk (for a deleted file, the last one that had it). For a folder, paths lists only its files that are missing or different; files added since are left alone. Nothing is written: pass the returned target and paths to restore to bring it back.',
+    inputSchema: z.object({ path: z.string().describe('File or folder, relative to the workspace or absolute'), workspace: workspaceParam }),
     annotations: { readOnlyHint: true },
   }, async ({ path: target, workspace }) => {
     try {
@@ -112,8 +112,8 @@ export function createServer(): McpServer {
       if (!found) throw new Error(`No snapshot has a version of ${rel} that differs from the file on disk`);
       const turn = found.turn && store.summarize(found.turn, []);
       return result(
-        { target: found.ref, paths: [rel], time: found.entry.time, turn: turn && { id: turn.id, agent: turn.agent, time: turn.time, prompt: turn.prompt } },
-        `Found a version of ${rel} from ${turn ? `${found.entry.kind === 'baseline' ? 'just before ' : ''}turn "${turn.prompt ?? turn.id}" (${turn.agent})` : `the snapshot of ${found.entry.time}`}. Call restore with target ${found.ref} and paths ["${rel}"] to preview bringing it back.`,
+        { target: found.ref, paths: found.paths, time: found.entry.time, turn: turn && { id: turn.id, agent: turn.agent, time: turn.time, prompt: turn.prompt } },
+        `Found a version of ${formatRecoverTarget(rel, found.paths)} from ${turn ? `${found.entry.kind === 'baseline' ? 'just before ' : ''}turn "${turn.prompt ?? turn.id}" (${turn.agent})` : `the snapshot of ${found.entry.time}`}. Call restore with target ${found.ref} and paths ${JSON.stringify(found.paths)} to preview bringing it back.`,
       );
     } catch (e) { return failure(e); }
   });

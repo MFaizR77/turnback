@@ -217,6 +217,28 @@ it('recovers one deleted file through the CLI', () => {
   expect(none.stdout).toContain('No snapshot has a version of never.txt');
 }, 30_000);
 
+it('recovers a deleted folder through the CLI', () => {
+  const p = tempProject('turnback-recover-folder-cli-');
+  mkdirSync(p.file('src/sub'), { recursive: true });
+  p.write('src/a.txt', 'a');
+  p.write('src/sub/b.txt', 'b');
+  p.write('other.txt', 'o');
+  const run = cli(p.root, p.home, ['run', '--label', 'clean', '--', process.execPath, '-e',
+    "const fs = require('node:fs'); fs.rmSync('src', { recursive: true }); fs.writeFileSync('other.txt', 'o2')"]);
+  expect(run.status).toBe(0);
+
+  const dry = cli(p.root, p.home, ['recover', 'src', '--dry-run']);
+  expect(dry.status).toBe(0);
+  expect(dry.stdout).toMatch(/^Recover src\/ \(2 files\) from just before turn "clean" \(manual, /);
+  expect(dry.stdout).toMatch(/^ {2}restore +src\/a\.txt$/m);
+  expect(dry.stdout).toMatch(/^ {2}restore +src\/sub\/b\.txt$/m);
+  expect(dry.stdout).not.toContain('other.txt');
+  expect(cli(p.root, p.home, ['recover', 'src', '--yes']).status).toBe(0);
+  expect(p.read('src/a.txt')).toBe('a');
+  expect(p.read('src/sub/b.txt')).toBe('b');
+  expect(p.read('other.txt')).toBe('o2');
+}, 30_000);
+
 it('names the completed turn when recovering its end snapshot', () => {
   const p = tempProject('turnback-recover-end-cli-');
   const run = cli(p.root, p.home, ['run', '--label', 'create file', '--', process.execPath, '-e', "require('node:fs').writeFileSync('made.txt', 'made')"]);

@@ -197,15 +197,15 @@ export class ShadowRepo {
    * For each snapshot ref: whether it still exists, and the blob ID of `rel` in it (the path is
    * matched exactly). One `cat-file` process answers for all refs, instead of an `ls-tree` per ref.
    */
-  lookup(refs: string[], rel: string): Map<string, { exists: boolean; oid?: string }> {
-    const found = new Map<string, { exists: boolean; oid?: string }>();
+  lookup(refs: string[], rel: string): Map<string, { exists: boolean; oid?: string; tree?: string }> {
+    const found = new Map<string, { exists: boolean; oid?: string; tree?: string }>();
     if (!refs.length) return found;
     const input = refs.map(ref => `${ref}\n${ref}:${rel}\n`).join('');
     const lines = this.run(['cat-file', '--batch-check=%(objecttype) %(objectname)'], input).split('\n');
     refs.forEach((ref, i) => {
       const exists = lines[2 * i]?.startsWith('commit ') ?? false;
       const [type, oid] = (lines[2 * i + 1] ?? '').split(' ');
-      found.set(ref, { exists, oid: exists && type === 'blob' ? oid : undefined });
+      found.set(ref, { exists, oid: exists && type === 'blob' ? oid : undefined, ...exists && type === 'tree' ? { tree: oid } : {} });
     });
     return found;
   }

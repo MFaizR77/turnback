@@ -206,26 +206,53 @@ export interface Recoverable {
   entry: Entry;
   /** The turn whose snapshot holds that version, if any. */
   turn?: Turn;
+  /** Workspace-relative files to restore from `ref`: the file itself, or the files of a folder that differ. */
+  paths: string[];
 }
 
 /**
  * Newest snapshot holding a version of `absPath` that differs from the file on disk:
- * for a deleted file, the last snapshot that still had it.
+ * for a deleted file, the last snapshot that still had it. For a folder, the newest snapshot
+ * with files that are missing or different on disk, and only those files.
  */
 export function findRecoverable(store: Store, absPath: string): Recoverable | undefined {
   const rel = store.workspace.relative(absPath);
   if (!rel) throw new Error(`Path outside workspace: ${absPath}`);
   if (store.mode() === 'edits-only') throw new Error('recover needs full snapshots; this workspace is in edits-only mode');
-  const have = store.workspace.fileState(rel, store.repo.objectIdLength());
   // Newest entry per snapshot ref, newest first.
   const newest = new Map<string, Entry>();
   for (const e of store.entries().reverse()) if (e.status === 'ok' && e.ref && !newest.has(e.ref)) newest.set(e.ref, e);
   const found = store.repo.lookup([...newest.keys()], rel);
+  const onDisk = store.workspace.stat(rel);
+  const folder = onDisk ? onDisk.isDirectory() : [...found.values()].some(f => f.tree);
+  const oidLength = store.repo.objectIdLength();
+  const recoverable = (ref: string, entry: Entry, paths: string[]): Recoverable =>
+    ({ ref, entry, turn: store.turns().find(t => t.entries.some(e => e.id === entry.id)), paths });
+
+  if (!folder) {
+    const have = store.workspace.fileState(rel, oidLength);
+    for (const [ref, entry] of newest) {
+      const oid = found.get(ref)?.oid;
+      if (oid && oid !== have?.oid) return recoverable(ref, entry, [rel]);
+    }
+    return undefined;
+  }
+
+  // A folder: the newest snapshot with files that are missing or different on disk. Files added
+  // since are left alone, so only those files are restored, never the whole folder.
+  const seen = new Set<string>();
   for (const [ref, entry] of newest) {
-    const oid = found.get(ref)?.oid;
-    if (!oid || oid === have?.oid) continue;
-    const turn = store.turns().find(t => t.entries.some(e => e.id === entry.id));
-    return { ref, entry, turn };
+    const tree = found.get(ref)?.tree;
+    if (!tree || seen.has(tree)) continue;
+    seen.add(tree);
+    const paths: string[] = [];
+    for (const [name, item] of store.repo.tree(`${ref}:${rel}`)) {
+      const file = `${rel}/${name}`;
+      if (store.workspace.excluded(file)) continue;
+      const have = store.workspace.fileState(file, oidLength);
+      if (!have || have.oid !== item.oid || have.mode !== item.mode) paths.push(file);
+    }
+    if (paths.length) return recoverable(ref, entry, paths.sort());
   }
   return undefined;
 }
