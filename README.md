@@ -1,9 +1,6 @@
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.svg">
-  <img src="docs/logo.svg" alt="Turnback logo" width="72" height="72">
-</picture>
-
-# Turnback
+<p align="center">
+  <img src="docs/logo-banner.png" alt="Turnback" width="600">
+</p>
 
 **Undo for AI coding agents, even after `rm -rf`.**
 

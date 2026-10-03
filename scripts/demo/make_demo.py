@@ -1,4 +1,6 @@
-"""Render docs/demo.gif and docs/social-preview.png from a real Turnback run.
+"""Render the demo GIFs in docs/ from a real Turnback run.
+
+docs/social-preview.png and docs/logo-banner.png come from scripts/brand/brand.html.
 
 The script builds a throwaway project, feeds Turnback the same hook payloads
 Claude Code sends, really runs `rm -rf src .env`, and records the actual CLI
@@ -318,31 +320,6 @@ def render_gif(steps: list[tuple[str, object, int]], font: ImageFont.FreeTypeFon
     indexed[0].save(path, save_all=True, append_images=indexed[1:], duration=durations, loop=0, optimize=True)
 
 
-def render_social(o: dict[str, str], font_path: str | None, path: Path) -> None:
-    img = Image.new("RGB", (1280, 640), BG)
-    d = ImageDraw.Draw(img)
-    title_font = load_font(font_path, 64)
-    body_font = load_font(font_path, 30)
-    small = load_font(font_path, 24)
-    d.text((80, 90), "turnback", font=title_font, fill=FG)
-    d.text((80, 190), "Undo for AI coding agents,", font=body_font, fill=FG)
-    d.text((80, 234), "even after ", font=body_font, fill=FG)
-    x = 80 + d.textlength("even after ", font=body_font)
-    d.text((x, 234), "rm -rf", font=body_font, fill=DANGER)
-    d.text((80, 300), "Claude Code · Codex · Cursor · Gemini CLI · OpenCode · Antigravity", font=small, fill=DIM)
-    lines = [
-        ([("$ ", PROMPT), ("turnback undo --yes", FG)]),
-        ([(next(l for l in o["undo"].split("\n") if l.startswith("Restored")), ACCENT)]),
-        ([("$ ", PROMPT), ("npm i -g turnback", FG)]),
-    ]
-    for i, segments in enumerate(lines):
-        x, y = 80, 420 + i * 44
-        for text, color in segments:
-            d.text((x, y), text, font=small, fill=color)
-            x += d.textlength(text, font=small)
-    img.save(path, optimize=True)
-
-
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument("--font", help="monospace TTF/TTC to use")
@@ -360,8 +337,7 @@ def main() -> None:
     render_gif(build_script(output), font, DOCS / "demo.gif")
     render_gif(build_cli_script(cli_output), font, DOCS / "demo-cli.gif", rows=16)
     render_gif(build_tour_script(tour_output), font, DOCS / "demo-tour.gif", rows=24)
-    render_social(output, args.font, DOCS / "social-preview.png")
-    for name in ("demo.gif", "demo-cli.gif", "demo-tour.gif", "social-preview.png"):
+    for name in ("demo.gif", "demo-cli.gif", "demo-tour.gif"):
         print(f"{name}: {(DOCS / name).stat().st_size // 1024} kB")
 
 

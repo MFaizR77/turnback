@@ -1,0 +1,58 @@
+<!doctype html>
+<!--
+  Source for docs/logo-banner.png (README header) and docs/social-preview.png.
+  Render: serve this folder (python -m http.server), open brand.html in
+  Playwright, and screenshot #banner and #social with omitBackground.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Turnback brand</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;600&family=Hanken+Grotesk:wght@500&display=swap">
+<style>
+  :root { --night: #121316; --paper: #F7F7F8; --dot: #F2B04A; --muted: #8B8E97; }
+  body { margin: 0; background: transparent; display: grid; gap: 40px; padding: 40px; justify-items: start; }
+  .mark { display: block; flex: none; color: var(--paper); }
+  .lockup { display: flex; align-items: center; gap: .3em; }
+  .lockup .mark { width: 1.25em; height: 1.25em; }
+  .wordmark { font: 600 1em/1 "Geist Mono", ui-monospace, monospace; letter-spacing: -.035em; color: var(--paper); }
+
+  #banner { width: 1600px; height: 560px; border-radius: 32px; background: var(--night); display: grid; place-items: center; }
+  #banner .lockup { font-size: 168px; }
+
+  #social { width: 1280px; height: 640px; background: var(--night); position: relative; overflow: hidden;
+    padding: 104px 96px 72px; box-sizing: border-box; display: grid; grid-template-rows: auto auto 1fr auto; }
+  #social .lockup { font-size: 104px; }
+  #social .tagline { margin: 44px 0 0; font: 500 46px/1.3 "Hanken Grotesk", system-ui, sans-serif; color: var(--paper); opacity: .88; }
+  #social code { font: 400 .92em "Geist Mono", ui-monospace, monospace; }
+  #social .meta { grid-row: 4; display: grid; gap: 10px; font: 400 23px "Geist Mono", ui-monospace, monospace; color: var(--muted); }
+  #social .meta b { font-weight: 400; color: var(--paper); opacity: .75; }
+  #social .trail { position: absolute; width: 400px; height: 400px; right: 64px; top: 92px; opacity: .13; }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="mark" viewBox="0 0 64 64">
+    <g fill="none" stroke="currentColor" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M49 48V26a13 13 0 0 0-26 0v11"/>
+      <path d="M15 30l8 8 8-8"/>
+    </g>
+    <circle cx="23" cy="51.5" r="5.5" style="fill: var(--dot)"/>
+  </symbol>
+</svg>
+
+<div id="banner">
+  <div class="lockup"><svg class="mark"><use href="#mark"/></svg><span class="wordmark">turnback</span></div>
+</div>
+
+<div id="social">
+  <svg class="mark trail"><use href="#mark"/></svg>
+  <div class="lockup"><svg class="mark"><use href="#mark"/></svg><span class="wordmark">turnback</span></div>
+  <p class="tagline">Undo for AI coding agents,<br>even after <code>rm -rf</code>.</p>
+  <div class="meta">
+    <span>Claude Code · Codex · Cursor · Gemini CLI · OpenCode · Antigravity</span>
+    <b>$ npm i -g turnback</b>
+  </div>
+</div>
+</body>
+</html>
