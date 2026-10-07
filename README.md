@@ -62,6 +62,7 @@ They work side by side: rewind the conversation with `/rewind`, and the files wi
 ## Everyday use
 
 ```bash
+turnback --help                     # commands, options, and quick-start examples
 turnback list                       # recent turns with their prompts
 turnback diff <turn>                # what a turn changed
 turnback undo --dry-run             # show the plan

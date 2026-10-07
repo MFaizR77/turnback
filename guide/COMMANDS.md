@@ -4,6 +4,7 @@ Every command prints text for people. Where noted, `--json` prints the raw data 
 
 | Command | What it does |
 |---|---|
+| `--help` | Shows an introduction, commands with descriptions, common options, examples, and a documentation link (also `-h`, `help`, or no arguments). Does not read workspace history or write Turnback data. |
 | `install <agent\|all> [--project] [--no-mcp]` | Adds Turnback hooks (and the MCP server unless `--no-mcp`) to the agent's config. Without `--project` it writes the user-level config. Other config is kept. |
 | `uninstall <agent\|all> [--project]` | Removes only Turnback entries. |
 | `list [--json]` | Turns, newest first: prompt, agent, and changed file count. |

@@ -22,27 +22,69 @@ import { applyRestore, findRecoverable, planRestore, redoTarget, undoTarget, typ
 import { Store } from '../core/store.js';
 import type { Agent, HookEvent, Turn } from '../core/types.js';
 
-const USAGE = `Usage:
-  turnback install|uninstall <claude|codex|gemini|cursor|opencode|antigravity|all> [--project] [--no-mcp]
-  turnback list [--json] | status [--json] | gc
-  turnback du [--json] [--prune [--yes] | --compact]
-  turnback steps <turn> [--json]
-  turnback log <file|folder> [--json]
-  turnback blame <file> [-L <start>,<end>] [--json]
-  turnback search <text> [--json]
-  turnback diff <turn>
-  turnback mark <label> | marks [--json]
-  turnback restore <turn|mark|snapshot> [--before-step <n>] [--path <p>...] [--dry-run | --yes] [--json]
-  turnback undo | redo [--dry-run | --yes] [--json]
-  turnback recover <file|folder> [--dry-run | --yes] [--json]
-  turnback run [--label <text>] -- <command...>
-  turnback export <turn...> [--out <file.patch>] | --commit [--message <text>]
-  turnback report [--session <id>] [--html [--out <file>]] | --pr [--base <branch>] [--apply]
-  turnback stats [--days <n>] [--json] [--svg <file>]
-  turnback compare <turnA> <turnB> [--json]
-  turnback ui [--port <n>] [--no-open]
-  turnback mcp
-  turnback --version`;
+const USAGE = `Turnback ${VERSION} - undo for AI coding agents.
+Hooks record turns, including shell changes and untracked/gitignored files.
+Snapshots live in ~/.turnback; restore changes files, not the conversation.
+
+Usage:
+  turnback <command> [arguments] [options]
+
+Setup:
+  install <agent|all>            Install hooks and MCP (user level by default)
+  uninstall <agent|all>          Remove Turnback hooks and MCP
+  Agents: claude, codex, gemini, cursor, opencode, antigravity
+
+History:
+  list                          List recent turns with prompts and changed files
+  diff <turn>                   Show a turn's changes as a patch
+  steps <turn>                  List the edits and shell commands in a turn
+  log <file|folder>              Find turns that changed a path
+  search <text>                 Search prompts, commands, and paths
+  blame <file> [-L <start>,<end>] Show which turn wrote each line
+  compare <turnA> <turnB>        Compare the results of two turns
+
+Restore and checkpoints:
+  undo                          Return to before the latest turn
+  redo                          Return to before the last restore or undo
+  restore <turn|mark|snapshot>   Return to a turn's start or a saved checkpoint
+  recover <file|folder>         Find and restore missing or changed files
+  mark <label>                  Save a named checkpoint of the workspace
+  marks                         List named checkpoints
+  Undo, redo, restore, and recover only show a plan unless --yes is given.
+
+Commands, reports, and storage:
+  run [--label <text>] -- <command...>  Record any command as an undoable turn
+  report [--session <id>] [--html [--out <file>]]  Summarize a session
+  report --pr [--base <branch>] [--apply]  Print or add AI provenance to a PR
+  stats [--days <n>] [--svg <file>]  Show activity (default: 7 days)
+  ui [--port <n>] [--no-open]    Open the read-only timeline in a browser
+  export <turn...> [--out <file.patch>]  Export turns as a patch
+  export <turn...> --commit [--message <text>]  Commit turns to your Git repo
+  status                        Show coverage and failed or skipped snapshots
+  du [--prune [--yes] | --compact]  Show or clean storage across workspaces
+  gc                            Remove expired turns and pack snapshots
+  mcp                           Start the stdio MCP server
+
+Options (where supported):
+  --dry-run                     Preview a restore without changing files
+  --yes                         Apply a restore or confirm du --prune
+  --json                        Print raw data instead of text
+  --path <p>                    Restore only this path; repeat for more paths
+  --before-step <n>             Restore to just before a step from steps <turn>
+  --project                     Install/uninstall in this project's config
+  --no-mcp                      Install hooks without MCP
+  --help, -h, help              Show this help
+  --version, -v, version        Print the installed version
+
+Quick start:
+  turnback install codex --project
+  turnback list
+  turnback undo --dry-run
+  turnback undo --yes
+  turnback run -- npm run codegen
+
+Commands and all options:
+  https://github.com/MFaizR77/turnback/blob/main/guide/COMMANDS.md`;
 
 const CLI = fileURLToPath(import.meta.url);
 
@@ -180,6 +222,7 @@ function planTitle(store: Store, operation: Operation, target: string, requested
 
 async function main(): Promise<void> {
   const [command, ...rest] = process.argv.slice(2);
+  if (!command || command === '--help' || command === '-h' || command === 'help') return output(USAGE);
   if (command === 'run') return runCommand(rest);
   const args = parseArgs(rest);
 
@@ -357,7 +400,7 @@ async function main(): Promise<void> {
     }
     default:
       output(USAGE);
-      if (command && command !== 'help' && command !== '--help') process.exitCode = 2;
+      process.exitCode = 2;
   }
 }
 
