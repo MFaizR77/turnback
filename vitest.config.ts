@@ -13,6 +13,8 @@ export default defineConfig({
       GIT_CONFIG_NOSYSTEM: '1',
       // Never read the developer's own Claude Code settings (an installed Turnback plugin changes install()).
       CLAUDE_CONFIG_DIR: path.join(tmpdir(), 'turnback-no-claude-config'),
+      // Plugin detection and user installs must never read or change the developer's Codex config.
+      CODEX_HOME: path.join(tmpdir(), 'turnback-no-codex-config'),
     },
   },
 });

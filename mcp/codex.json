@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "turnback": {
+      "command": "node",
+      "args": ["./dist/cli.js", "mcp"],
+      "cwd": "./",
+      "env_vars": ["TURNBACK_HOME"]
+    }
+  }
+}

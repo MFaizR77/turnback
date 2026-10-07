@@ -44,6 +44,8 @@ turnback install all            # user-level hooks and MCP for every agent
 turnback install codex --project  # or one agent, in this project only
 ```
 
+Codex plugin support is available in this checkout for local testing, including hooks, MCP, and the same four skills as Claude Code. It will ship in the next npm release; the published 0.9.0 package uses the installer above. See [testing the Codex plugin](guide/INSTALL.md#codex-plugin-local-testing-before-release).
+
 Claude Code, Codex, OpenCode, and Antigravity CLI have been tested live; Gemini CLI and Cursor are covered by tests built from their documented hook payloads. Details per agent: [installation](guide/INSTALL.md).
 
 ## Compared with Claude Code's `/rewind`
@@ -130,6 +132,8 @@ From a clone, run `npm ci && npm run build` and use `node dist/cli.js` in place 
 ## Releasing
 
 Set the same version in `package.json` and in both version fields of `server.json`, commit, then push a `v<version>` tag. The `Publish` workflow checks that the versions match, runs the tests, publishes to npm through trusted publishing (provenance is attached automatically), and publishes `server.json` to the MCP registry as `io.github.MFaizR77/turnback`.
+
+Also update `src/core/config.ts`, both plugin manifests, and the npm ranges in `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json`. For the first release containing Codex support, set the Codex marketplace range to that new version and change its installation policy to `AVAILABLE`.
 
 npm trusted publishing is configured on the package page at npmjs.com (repository `MFaizR77/turnback`, workflow `publish.yml`), which needs the package to exist. The first version is therefore published once by hand with `npm publish --access public`; pushing its tag afterwards skips npm (the version exists) and only publishes to the MCP registry. Later tags do both.
 

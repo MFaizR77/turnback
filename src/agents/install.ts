@@ -4,6 +4,7 @@ import { homedir } from 'node:os';
 import path from 'node:path';
 import type { Agent } from '../core/types.js';
 import { opencodePluginSource } from './opencode-plugin.js';
+import { codexConfigDir, codexPluginEnabled } from './codex-plugin.js';
 
 const AGENTS: Exclude<Agent, 'manual'>[] = ['claude', 'codex', 'gemini', 'cursor', 'opencode', 'antigravity'];
 /** Marks entries owned by Turnback, so reinstall and uninstall never touch other entries. */
@@ -69,7 +70,7 @@ const SPECS: Record<HookAgent, AgentSpec> = {
   },
 };
 
-/** Hook event → tool matcher for one agent; the Claude Code plugin's hooks/hooks.json must match it. */
+/** Hook event → tool matcher for one agent; plugin hook files must match it. */
 export const hookEvents = (agent: HookAgent) => SPECS[agent].events;
 
 /** Install hooks and the MCP server. Other config is kept; calling again does not duplicate entries. */
@@ -92,8 +93,12 @@ export function install(which: string, project: boolean, root: string, cli: stri
       touched.push(...installOpencode(base, project, cli, withMcp));
       continue;
     }
+    if (agent === 'codex' && codexPluginEnabled(root)) {
+      touched.push('skipped codex: the Turnback plugin is enabled; review and trust its hooks in /hooks');
+      continue;
+    }
     const spec = SPECS[agent];
-    const file = path.join(base, spec.hooksFile(project));
+    const file = hooksConfigFile(agent, spec, base, project);
     const config = readJson(file);
     if (spec.layout === 'named') {
       config.turnback = namedHooks(agent, spec, cli);
@@ -108,7 +113,7 @@ export function install(which: string, project: boolean, root: string, cli: stri
     writeJson(file, config);
     touched.push(file);
 
-    const mcpFile = withMcp && spec.mcp !== 'inline' ? spec.mcp.file(base, project) : undefined;
+    const mcpFile = withMcp && spec.mcp !== 'inline' ? mcpConfigFile(agent, spec, base, project) : undefined;
     if (mcpFile && spec.mcp !== 'inline') {
       if (spec.mcp.format === 'toml') writeToml(mcpFile, cli);
       else updateJson(mcpFile, m => { (m.mcpServers ??= {}).turnback = mcpServer(cli); });
@@ -140,7 +145,7 @@ export function uninstall(which: string, project: boolean, root: string): string
       continue;
     }
     const spec = SPECS[agent];
-    const file = path.join(base, spec.hooksFile(project));
+    const file = hooksConfigFile(agent, spec, base, project);
     if (existsSync(file)) {
       updateJson(file, config => {
         if (spec.layout === 'named') delete config.turnback;
@@ -150,13 +155,22 @@ export function uninstall(which: string, project: boolean, root: string): string
       touched.push(file);
     }
     if (spec.mcp === 'inline') continue;
-    const mcpFile = spec.mcp.file(base, project);
+    const mcpFile = mcpConfigFile(agent, spec, base, project);
     if (!mcpFile || !existsSync(mcpFile)) continue;
     if (spec.mcp.format === 'toml') writeFileSync(mcpFile, readFileSync(mcpFile, 'utf8').replace(TOML_BLOCK, '\n'));
     else updateJson(mcpFile, m => { delete m.mcpServers?.turnback; });
     touched.push(mcpFile);
   }
   return touched;
+}
+
+function hooksConfigFile(agent: HookAgent, spec: AgentSpec, base: string, project: boolean): string {
+  return agent === 'codex' && !project ? path.join(codexConfigDir(), 'hooks.json') : path.join(base, spec.hooksFile(project));
+}
+
+function mcpConfigFile(agent: HookAgent, spec: AgentSpec, base: string, project: boolean): string | undefined {
+  if (spec.mcp === 'inline') return undefined;
+  return agent === 'codex' && !project ? path.join(codexConfigDir(), 'config.toml') : spec.mcp.file(base, project);
 }
 
 function requireGit(): void {

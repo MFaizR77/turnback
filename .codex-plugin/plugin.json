@@ -1,0 +1,21 @@
+{
+  "name": "turnback",
+  "version": "0.9.0",
+  "description": "Undo any agent turn, including shell commands and untracked files",
+  "author": { "name": "MFaizR77", "url": "https://github.com/MFaizR77" },
+  "homepage": "https://github.com/MFaizR77/turnback#readme",
+  "repository": "https://github.com/MFaizR77/turnback",
+  "license": "MIT",
+  "keywords": ["undo", "restore", "snapshot", "codex", "hooks"],
+  "skills": "./skills/",
+  "hooks": "./hooks/codex.json",
+  "mcpServers": "./mcp/codex.json",
+  "interface": {
+    "displayName": "Turnback",
+    "shortDescription": "Undo coding agent turns, including shell changes",
+    "developerName": "MFaizR77",
+    "category": "Productivity",
+    "capabilities": ["Read", "Write"],
+    "websiteURL": "https://github.com/MFaizR77/turnback"
+  }
+}

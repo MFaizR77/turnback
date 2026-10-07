@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { beforeEach, expect, it } from 'vitest';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { install, uninstall } from '../src/agents/install.js';
 import { tempDir } from './helpers.js';
 
@@ -14,11 +14,14 @@ const readConfig = (agent: string) => JSON.parse(readFileSync(hooksFile(agent), 
 
 beforeEach(() => {
   root = tempDir('turnback-install-');
+  vi.stubEnv('CODEX_HOME', path.join(root, 'codex-user'));
   for (const agent of AGENTS) {
     mkdirSync(path.join(root, `.${agent}`));
     writeFileSync(hooksFile(agent), JSON.stringify({ custom: { keep: true }, hooks: { Stop: [{ hooks: [{ type: 'command', command: 'other' }] }] } }));
   }
 });
+
+afterEach(() => vi.unstubAllEnvs());
 
 it('installs project hooks idempotently and keeps unrelated settings', () => {
   const first = install('all', true, root, CLI_PATH);
@@ -112,4 +115,58 @@ it('skips Claude Code hooks when the plugin is enabled in local or project setti
   expect(install('claude', true, root, CLI_PATH)).toEqual([expect.stringMatching(/^skipped claude: /)]);
   // A user-level install from this project also sees the project's plugin.
   expect(install('claude', false, root, CLI_PATH)).toEqual([expect.stringMatching(/^skipped claude: /)]);
+});
+
+it('skips manual Codex hooks and MCP when a Turnback plugin is enabled', () => {
+  const config = path.join(root, '.codex', 'config.toml');
+  writeFileSync(config, '[plugins."turnback@turnback"]\nenabled = true\n');
+  const hooks = readFileSync(hooksFile('codex'), 'utf8');
+  expect(install('codex', true, root, CLI_PATH)).toEqual([expect.stringMatching(/^skipped codex: /)]);
+  expect(install('codex', false, root, CLI_PATH)).toEqual([expect.stringMatching(/^skipped codex: /)]);
+  expect(readFileSync(hooksFile('codex'), 'utf8')).toBe(hooks);
+  expect(readFileSync(config, 'utf8')).not.toContain('mcp_servers');
+  expect(existsSync(path.join(process.env.CODEX_HOME!, 'hooks.json'))).toBe(false);
+});
+
+it('respects a project disable of a user plugin and keeps unrelated plugin settings', () => {
+  const userDir = process.env.CODEX_HOME!;
+  mkdirSync(userDir);
+  writeFileSync(path.join(userDir, 'config.toml'), '[plugins."turnback@turnback"]\nenabled = true\n');
+  const projectConfig = path.join(root, '.codex', 'config.toml');
+  const old = '[plugins."turnback@turnback"]\nenabled = false\n[plugins."other@turnback"]\nenabled = true\n';
+  writeFileSync(projectConfig, old);
+  install('codex', true, root, CLI_PATH);
+  expect(JSON.stringify(readConfig('codex').hooks)).toContain('turnback:');
+  expect(readFileSync(projectConfig, 'utf8')).toContain(old.trimEnd());
+});
+
+it('detects a user plugin in custom CODEX_HOME and another enabled marketplace', () => {
+  const userDir = process.env.CODEX_HOME!;
+  mkdirSync(userDir);
+  writeFileSync(path.join(userDir, 'config.toml'), '[plugins."turnback@team"]\nenabled = true\n[plugins."turnback@turnback"]\nenabled = false\n');
+  writeFileSync(path.join(root, '.codex', 'config.toml'), '[plugins."turnback@turnback"]\nenabled = false\n');
+  expect(install('codex', true, root, CLI_PATH)).toEqual([expect.stringMatching(/^skipped codex: /)]);
+});
+
+it('uses CODEX_HOME for manual user install and removes only its own entries', () => {
+  const userDir = process.env.CODEX_HOME!;
+  mkdirSync(userDir);
+  const config = path.join(userDir, 'config.toml');
+  writeFileSync(config, '[plugins."other@team"]\nenabled = true\n');
+  const files = [path.join(userDir, 'hooks.json'), config];
+  expect(install('codex', false, root, CLI_PATH)).toEqual(files);
+  expect(readFileSync(config, 'utf8')).toContain('mcp_servers.turnback');
+  expect(uninstall('codex', false, root)).toEqual(files);
+  expect(readFileSync(config, 'utf8')).toContain('[plugins."other@team"]');
+  expect(readFileSync(config, 'utf8')).not.toContain('mcp_servers.turnback');
+});
+
+it('refuses malformed Codex TOML before writing hooks or MCP', () => {
+  const config = path.join(root, '.codex', 'config.toml');
+  const old = '[plugins."turnback@turnback"\nenabled = true\n';
+  writeFileSync(config, old);
+  const hooks = readFileSync(hooksFile('codex'), 'utf8');
+  expect(() => install('codex', true, root, CLI_PATH)).toThrow(/Cannot parse .* as TOML/);
+  expect(readFileSync(config, 'utf8')).toBe(old);
+  expect(readFileSync(hooksFile('codex'), 'utf8')).toBe(hooks);
 });

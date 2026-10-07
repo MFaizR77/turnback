@@ -35,6 +35,8 @@
   "files": [
     "dist/**/*.js",
     "guide",
+    ".codex-plugin/plugin.json",
+    "mcp",
     ".claude-plugin/plugin.json",
     "hooks",
     "skills"
@@ -44,6 +46,7 @@
     "test": "vitest run",
     "bench": "npm run build && node scripts/benchmark.mjs",
     "check": "npm run build && npm test",
+    "plugin:codex:dev": "npm run build && node scripts/codex-plugin-dev.mjs",
     "prepack": "npm run build"
   },
   "engines": {
@@ -55,6 +58,7 @@
     "@types/node": "^24.0.0",
     "esbuild": "^0.28.2",
     "ignore": "^7.0.10",
+    "smol-toml": "^1.9.0",
     "typescript": "^5.9.0",
     "vitest": "^4.0.0",
     "zod": "^4.0.0"

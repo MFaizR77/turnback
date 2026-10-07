@@ -1,0 +1,12 @@
+{
+  "name": "turnback",
+  "interface": { "displayName": "Turnback" },
+  "plugins": [
+    {
+      "name": "turnback",
+      "source": { "source": "npm", "package": "turnback", "version": "^0.9.0" },
+      "policy": { "installation": "NOT_AVAILABLE", "authentication": "ON_INSTALL" },
+      "category": "Productivity"
+    }
+  ]
+}

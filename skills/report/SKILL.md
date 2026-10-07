@@ -4,4 +4,4 @@ description: Write a markdown report of the latest agent session recorded by Tur
 argument-hint: "[session-id]"
 ---
 
-Call the `session_report` tool from the `turnback` MCP server with `workspace` set to the current project directory and `session` set to "$ARGUMENTS" when it is not empty. Show the markdown as returned. If the user wants a PR description, rewrite it into a short summary followed by the file list, and keep every file path and command exactly as reported.
+Call the `session_report` tool from the `turnback` MCP server with `workspace` set to the current project directory and `session` set to the session ID in the user's request or invocation arguments, when provided. Show the markdown as returned. If the user wants a PR description, rewrite it into a short summary followed by the file list, and keep every file path and command exactly as reported. Applying a report to a pull request requires the user's request to update that pull request.
