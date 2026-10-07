@@ -36,6 +36,17 @@ claude plugin install turnback@turnback
 
 Then use `/turnback:turns`, `/turnback:diff-turn`, `/turnback:undo`, and `/turnback:report`.
 
+In Codex (available in the next npm release):
+
+```bash
+codex plugin marketplace add MFaizR77/turnback
+codex plugin add turnback@turnback
+```
+
+Start a new session, review and trust Turnback's hooks in `/hooks`, then use `$turnback:turns`, `$turnback:diff-turn`, `$turnback:undo`, and `$turnback:report`.
+
+The published 0.9.0 package uses the installer below. To try the Codex plugin from this checkout before release, see [local testing](guide/INSTALL.md#codex-plugin-local-testing-before-release).
+
 For Codex, Cursor, Gemini CLI, OpenCode, Antigravity CLI, or the CLI on its own (Node.js 22+ and Git 2.25+):
 
 ```bash
@@ -43,8 +54,6 @@ npm install -g turnback
 turnback install all            # user-level hooks and MCP for every agent
 turnback install codex --project  # or one agent, in this project only
 ```
-
-Codex plugin support is available in this checkout for local testing, including hooks, MCP, and the same four skills as Claude Code. It will ship in the next npm release; the published 0.9.0 package uses the installer above. See [testing the Codex plugin](guide/INSTALL.md#codex-plugin-local-testing-before-release).
 
 Claude Code, Codex, OpenCode, and Antigravity CLI have been tested live; Gemini CLI and Cursor are covered by tests built from their documented hook payloads. Details per agent: [installation](guide/INSTALL.md).
 
