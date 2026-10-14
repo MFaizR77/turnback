@@ -371,12 +371,10 @@ export class ShadowRepo {
     return [
       `--git-dir=${this.gitDir}`, `--work-tree=${this.root}`,
       '-c', 'core.autocrlf=false', '-c', 'core.longpaths=true',
-      // Documents, images, and archives are compressed already, and source files stay small at any
-      // level: the fastest zlib level made a 670 MB first snapshot 2.7 times as fast for the same
-      // size (35 s to 13 s, together with the unpack limit). fast-import
-      // would store a batch of fewer than 100 objects (a few large files) as loose objects, which gc
-      // then has to pack again under the lock.
-      '-c', 'core.compression=1', '-c', 'fastimport.unpackLimit=1',
+      // Most large files are compressed already, so a higher zlib level costs time for little space.
+      '-c', 'core.compression=1',
+      // Otherwise fast-import stores a batch of under 100 objects loose, and gc has to pack it again.
+      '-c', 'fastimport.unpackLimit=1',
       // Patches must stay appliable whatever the user's global config says.
       '-c', 'color.ui=never', '-c', 'diff.noprefix=false', '-c', 'diff.mnemonicPrefix=false',
       '-c', 'user.name=Turnback', '-c', 'user.email=turnback@localhost', '-c', 'user.useConfigOnly=false',

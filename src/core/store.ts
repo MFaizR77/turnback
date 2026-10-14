@@ -72,8 +72,8 @@ export class Store {
     } catch { /* only used by du */ }
   }
 
+  /** The base of the next snapshot. Never a probe (diff_range): later snapshots must not absorb what it saw. */
   latestRef(): string | undefined {
-    // Probes (diff_range) are never a base: a turn's later snapshots must not absorb what a probe saw.
     return this.entries().filter(e => e.ref && e.status === 'ok' && e.kind !== 'probe').at(-1)?.ref;
   }
 
@@ -202,12 +202,13 @@ export class Store {
 
   // ---- Background baseline ----
 
-  /** The expensive first snapshot, run in the background on install and session start. */
+  /**
+   * The expensive first snapshot, run in the background on install and session start. The mode is
+   * decided under the lock, so a hook waiting for warm never scans the workspace a second time; the
+   * scan stops at the edits-only limit, which bounds how long the lock is held.
+   */
   warm(): Entry {
     try {
-      // The lock is held while the mode is decided, so a hook waiting for warm never scans or
-      // snapshots the workspace a second time. The scan stops at the edits-only limit, which also
-      // bounds how long the lock is held.
       return this.locked(() => {
         if (this.mode() === 'edits-only') {
           return this.log({ ...WARM_ORIGIN, kind: 'warm', status: 'ok', note: 'edits-only mode already decided' });
@@ -337,18 +338,19 @@ export class Store {
       .reverse();
   }
 
-  /** Edit and shell steps of a turn, in order. Each ref is the snapshot taken just before that step ran. */
+  /**
+   * Edit and shell steps of a turn, in order. Each ref is the snapshot taken just before that step ran.
+   * Before any shell step, an edit snapshot only refreshes the previous edit's paths, so after a step
+   * without a snapshot the later edit snapshots may hold stale content and get no ref.
+   */
   steps(id: string): Step[] {
     const turn = this.findTurn(id);
     if (!turn) throw new Error(`Unknown turn: ${id}`);
-    // A failed baseline is followed by an `unprotected` entry for the same tool call.
     const calls = turn.entries.filter(isStepEntry);
     const scoped = this.mode() === 'full';
     let shellSeen = false, gap = false;
     return calls.map((e, i) => {
       const kind = e.command !== undefined ? 'shell' : 'edit';
-      // Before any shell step, an edit snapshot only refreshes the previous edit's paths. If an earlier
-      // snapshot is missing, this one can hold stale content for the files that step changed.
       const stale = scoped && kind === 'edit' && !shellSeen && gap;
       const step: Step = {
         n: i + 1,
@@ -377,10 +379,11 @@ export class Store {
 
   // ---- Status and cleanup ----
 
+  /**
+   * Like warm, the scan stops at the edits-only limit and is skipped once that mode is decided: large
+   * workspaces are the slow ones to scan, and in edits-only mode a list of skipped files says little.
+   */
   status() {
-    // Large workspaces are the slow ones to scan, and they are in edits-only mode, where only edited
-    // paths are snapshotted and a list of skipped files says little. So status scans only until the
-    // edits-only limit, like warm, and not at all once that mode is decided.
     const decided = this.mode() === 'edits-only';
     const scan = decided ? undefined : this.workspace.scan({ files: editsOnlyFiles(), bytes: EDITS_ONLY_BYTES });
     const entries = this.entries();
@@ -403,7 +406,8 @@ export class Store {
    * Delete turns older than 7 days that are not among the last 50 turns. Turnback's own snapshots
    * (warm, the safety snapshots of a restore) expire after the same 7 days, so a workspace that is
    * warmed every session does not keep each version forever. Marks, the latest snapshot, and refs
-   * still used by kept turns stay. Files left by old sessions and interrupted writes are removed.
+   * still used by kept turns stay. Files left by old sessions and interrupted writes are removed, and
+   * the repo is packed when refs were deleted or loose objects pile up.
    */
   gc({ now = Date.now(), keepDays = RETENTION.days, keepTurns = RETENTION.turns, compact = false }: GcOptions = {}) {
     return this.locked(() => {
@@ -413,22 +417,11 @@ export class Store {
       const expiredIds = new Set(expired.map(t => t.id));
 
       const entries = this.entries();
-      const isOwn = (e: Entry) => e.agent === 'turnback' && !!e.ref && e.kind !== 'probe';
-      const own = entries.filter(isOwn);
-      const keep = new Set(own.filter(e => e.kind === 'mark' || Date.parse(e.time) >= cutoff).map(e => e.ref!));
-      // The latest ref is the base of the next snapshot, and restore compares the files with the last
-      // end-of-turn snapshot to spot manual edits, so both stay even when they are old. So do
-      // Turnback's snapshots since the last agent turn: a redo may still need them.
-      const latest = this.latestRef();
-      if (latest) keep.add(latest);
-      const lastEnd = entries.findLast(e => (e.kind === 'turn-end' || e.kind === 'post-restore') && e.ref)?.ref;
-      if (lastEnd) keep.add(lastEnd);
-      const lastTurn = entries.findLastIndex(e => e.agent !== 'turnback' && e.kind === 'baseline');
-      for (const e of entries.slice(lastTurn + 1)) if (isOwn(e)) keep.add(e.ref!);
-      for (const t of turns) if (!expiredIds.has(t.id)) for (const e of t.entries) if (e.ref) keep.add(e.ref);
-      const deleted = new Set([...expired.flatMap(t => t.entries), ...own].flatMap(e => e.ref && !keep.has(e.ref) ? [e.ref] : []));
+      const keep = this.refsToKeep(entries, turns.filter(t => !expiredIds.has(t.id)), cutoff);
+      const deleted = new Set([...expired.flatMap(t => t.entries), ...entries.filter(isOwnSnapshot)]
+        .flatMap(e => e.ref && !keep.has(e.ref) ? [e.ref] : []));
       for (const e of entries) {
-        if (e.kind === 'probe' && e.ref && !keep.has(e.ref) && e.ref !== latest && now - Date.parse(e.time) > PROBE_TTL_MS) deleted.add(e.ref);
+        if (e.kind === 'probe' && e.ref && !keep.has(e.ref) && now - Date.parse(e.time) > PROBE_TTL_MS) deleted.add(e.ref);
       }
 
       for (const ref of deleted) this.repo.deleteRef(ref);
@@ -436,12 +429,30 @@ export class Store {
       if (expired.length) {
         writeFileSync(this.expiredFile, JSON.stringify([...new Set([...this.expiredTurns(), ...expiredIds])]));
       }
-      // Packing also removes what deleted refs left behind and leftovers of interrupted writes.
       const compacted = compact || deleted.size > 0 || this.needsCompaction();
       if (compacted) this.repo.prune();
       this.log({ agent: 'turnback', session: 'gc', turn: 'gc', kind: 'gc', status: 'ok', note: `Expired ${expired.length} turns${compacted ? '; packed' : ''}` });
       return { expired: expired.length, deletedRefs: deleted.size, compacted };
     });
+  }
+
+  /**
+   * Refs of kept turns, marks, and Turnback's own snapshots newer than `cutoff`. Older ones stay too
+   * when still needed: the latest ref is the base of the next snapshot, restore compares the files
+   * with the last end-of-turn snapshot to spot manual edits, and a redo may need Turnback's
+   * snapshots since the last agent turn.
+   */
+  private refsToKeep(entries: Entry[], keptTurns: Turn[], cutoff: number): Set<string> {
+    const own = entries.filter(isOwnSnapshot);
+    const keep = new Set(own.filter(e => e.kind === 'mark' || Date.parse(e.time) >= cutoff).map(e => e.ref!));
+    const latest = this.latestRef();
+    if (latest) keep.add(latest);
+    const lastEnd = entries.findLast(e => (e.kind === 'turn-end' || e.kind === 'post-restore') && e.ref)?.ref;
+    if (lastEnd) keep.add(lastEnd);
+    const lastTurn = entries.findLastIndex(e => e.agent !== 'turnback' && e.kind === 'baseline');
+    for (const e of entries.slice(lastTurn + 1)) if (isOwnSnapshot(e)) keep.add(e.ref!);
+    for (const t of keptTurns) for (const e of t.entries) if (e.ref) keep.add(e.ref);
+    return keep;
   }
 
   /**
@@ -488,6 +499,9 @@ export class Store {
 export function isStepEntry(e: Entry): boolean {
   return e.kind === 'edit' || e.kind === 'shell' || (e.kind === 'baseline' && e.status === 'ok');
 }
+
+/** Snapshots Turnback took itself (warm, marks, restore safety snapshots), not for an agent turn. */
+const isOwnSnapshot = (e: Entry) => e.agent === 'turnback' && !!e.ref && e.kind !== 'probe';
 
 export function originFields(o: EntryOrigin): EntryOrigin {
   return { agent: o.agent, session: o.session, turn: o.turn, paths: o.paths, command: o.command };

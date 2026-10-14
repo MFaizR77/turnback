@@ -69,8 +69,7 @@ export function exportCommit(store: Store, ids: string[], message?: string): Exp
   try {
     writeFileSync(list, committed.join('\0') + '\0');
     const pathspec = [`--pathspec-from-file=${list}`, '--pathspec-file-nul'];
-    // Turn paths such as `app/[slug]/page.tsx` must never be read as globs in the user's repo.
-    // (check-ignore above rejects this flag, so it is set per command.)
+    // Paths such as `app/[slug]/page.tsx` are not globs; check-ignore rejects this flag, so it is set per command.
     const literal = '--literal-pathspecs';
     const add = git([literal, 'add', '-A', ...pathspec]);
     if (add.status !== 0) throw new Error(`git add failed: ${add.stderr.trim()}`);

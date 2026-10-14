@@ -4,7 +4,11 @@ import { hookWaitMs, isInside, promptLabel, workspaceRoot, workspaceRootForFile 
 import { turnKey } from './journal.js';
 import { waitForUnlock } from './lock.js';
 import { originFields, Store } from './store.js';
-import type { Entry, HookEvent } from './types.js';
+import type { Entry, EntryOrigin, HookEvent } from './types.js';
+
+/** Notes of steps left unprotected because the turn has no baseline; the end-of-turn warning reads them. */
+export const STILL_WARMING = 'The first snapshot of this workspace was still being written; this step is not protected';
+export const BASELINE_FAILED_EARLIER = 'Baseline failed earlier in this turn; this step is not protected';
 
 /**
  * Apply the snapshot rules for one hook event:
@@ -58,41 +62,45 @@ function recordIn(store: Store, event: HookEvent): Entry | undefined {
   }
 }
 
-/** Notes of steps left unprotected because the turn has no baseline; the end-of-turn warning reads them. */
-export const STILL_WARMING = 'The first snapshot of this workspace was still being written; this step is not protected';
-export const BASELINE_FAILED_EARLIER = 'Baseline failed earlier in this turn; this step is not protected';
-
 function recordChange(store: Store, event: HookEvent, turn: Entry[]): Entry {
   const origin = originFields(event);
   const hasBaseline = turn.some(e => e.kind === 'baseline' && e.status === 'ok');
   if (!hasBaseline) {
-    // A baseline that failed once (a broken shadow repo, a held lock) would fail again, and each try
-    // can cost seconds on a large workspace: the rest of the turn goes on without one.
-    if (turn.some(e => e.kind === 'baseline')) {
-      return store.log({ ...origin, kind: event.kind, status: 'unprotected', note: BASELINE_FAILED_EARLIER });
-    }
-    if (!decideMode(store, turn)) return store.log({ ...origin, kind: event.kind, status: 'unprotected', note: STILL_WARMING });
+    const reason = whyUnprotected(store, turn);
+    if (reason) return unprotected(store, origin, event, reason);
   }
   const editsOnly = store.mode() === 'edits-only';
 
   if (editsOnly && (event.kind === 'shell' || !event.paths?.length)) {
-    return store.log({ ...origin, kind: event.kind, status: 'unprotected', note: 'edits-only mode: only edited paths are snapshotted' });
+    return unprotected(store, origin, event, 'edits-only mode: only edited paths are snapshotted');
   }
   if (!hasBaseline) return takeBaseline(store, event, editsOnly);
-  if (event.kind === 'edit' && (editsOnly || !hadShell(turn))) {
-    // Save the result of the previous edit and the content of the paths about to change.
-    const previous = turn.findLast(e => e.paths?.length);
-    return store.snapshot('edit', origin, [...(previous?.paths ?? []), ...(event.paths ?? [])]);
-  }
+  if (event.kind === 'edit' && (editsOnly || !hadShell(turn))) return store.snapshot('edit', origin, editPaths(turn, event));
   return store.snapshot(event.kind, origin);
 }
 
+const unprotected = (store: Store, origin: EntryOrigin, event: HookEvent, note: string) =>
+  store.log({ ...origin, kind: event.kind, status: 'unprotected', note });
+
 /**
- * Before a turn's first change the mode must be known: wait for a warm that is still deciding it,
- * and decide it now if this workspace was never warmed. Otherwise a workspace above the edits-only
- * limit would get a full snapshot inside the hook. The wait is bounded and happens once per turn:
- * while warm keeps running, later tool calls of the turn do not wait again. `false` when warm is
- * still running.
+ * Why a turn without a baseline goes on unprotected, or undefined when a baseline can be taken now.
+ * A failed baseline is not retried: it would fail again, and each try can cost seconds.
+ */
+function whyUnprotected(store: Store, turn: Entry[]): string | undefined {
+  if (turn.some(e => e.kind === 'baseline')) return BASELINE_FAILED_EARLIER;
+  if (!decideMode(store, turn)) return STILL_WARMING;
+  return undefined;
+}
+
+/** The previous edit's paths, to save its result, and the paths this edit is about to change. */
+function editPaths(turn: Entry[], event: HookEvent): string[] {
+  const previous = turn.findLast(e => e.paths?.length);
+  return [...(previous?.paths ?? []), ...(event.paths ?? [])];
+}
+
+/**
+ * Decide the mode before a turn's first change, so a workspace above the edits-only limit never gets
+ * a full snapshot inside a hook. Waits for a running warm once per turn; `false` while it still runs.
  */
 function decideMode(store: Store, turn: Entry[]): boolean {
   const waited = turn.some(e => e.note === STILL_WARMING);
@@ -109,10 +117,7 @@ function takeBaseline(store: Store, event: HookEvent, editsOnly: boolean): Entry
   const baseline = warm
     ? store.log({ ...origin, kind: 'baseline', ref: warm, status: 'ok' })
     : store.snapshot('baseline', origin);
-  if (baseline.status !== 'ok') {
-    return store.log({ ...origin, kind: event.kind, status: 'unprotected', note: 'Baseline unavailable' });
-  }
-  return baseline;
+  return baseline.status === 'ok' ? baseline : unprotected(store, origin, event, 'Baseline unavailable');
 }
 
 function endTurn(store: Store, event: HookEvent, turn: Entry[]): Entry {
