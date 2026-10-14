@@ -1,13 +1,13 @@
 import { randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, lstatSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, lstatSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import {
-  COMPACT_LOOSE, EDITS_ONLY_BYTES, editsOnlyFiles, WORKSPACE_FILE, GC_INTERVAL_MS, LOCK_TIMEOUT_MS, PROBE_TTL_MS, RETENTION, WARM_WAIT_MS,
+  COMPACT_LOOSE, EDITS_ONLY_BYTES, editsOnlyFiles, WORKSPACE_FILE, GC_INTERVAL_MS, LOCK_TIMEOUT_MS, PROBE_TTL_MS, RETENTION,
   canonicalPath, pathKey, workspaceDataDir, workspaceRoot,
 } from './config.js';
 import { Journal, turnKey } from './journal.js';
 import { QUOTE_SAFE } from './quote.js';
-import { LockTimeoutError, waitForUnlock, withLock } from './lock.js';
+import { LockTimeoutError, withLock } from './lock.js';
 import { ShadowRepo } from '../git/shadow.js';
 import type { Entry, EntryKind, EntryOrigin, Mark, Mode, NewEntry, Step, Turn } from './types.js';
 import { Workspace, type Scan } from '../workspace/workspace.js';
@@ -135,6 +135,7 @@ export class Store {
    */
   snapshotLocked(kind: EntryKind, origin: EntryOrigin, scope?: string[]): Entry {
     this.repo.init();
+    this.repo.clearStaleIndexLock();
     const previous = this.latestRef();
     let skipped: string[] = [];
 
@@ -224,11 +225,10 @@ export class Store {
   }
 
   /**
-   * Wait for warm to finish, then return the last snapshot if it still matches the work-tree.
-   * That way the turn baseline does not need a new snapshot.
+   * The last snapshot, if it still matches the work-tree, so the turn baseline does not need a new
+   * one. Called once warm has finished.
    */
-  waitWarm(): string | undefined {
-    waitForUnlock(this.dir, WARM_WAIT_MS);
+  warmRef(): string | undefined {
     const ref = this.latestRef();
     if (!ref) return undefined;
     try {
@@ -400,8 +400,10 @@ export class Store {
   }
 
   /**
-   * Delete turns older than 7 days that are not among the last 50 turns.
-   * Refs still used by other turns or by internal Turnback snapshots are kept.
+   * Delete turns older than 7 days that are not among the last 50 turns. Turnback's own snapshots
+   * (warm, the safety snapshots of a restore) expire after the same 7 days, so a workspace that is
+   * warmed every session does not keep each version forever. Marks, the latest snapshot, and refs
+   * still used by kept turns stay. Files left by old sessions and interrupted writes are removed.
    */
   gc({ now = Date.now(), keepDays = RETENTION.days, keepTurns = RETENTION.turns, compact = false }: GcOptions = {}) {
     return this.locked(() => {
@@ -411,16 +413,26 @@ export class Store {
       const expiredIds = new Set(expired.map(t => t.id));
 
       const entries = this.entries();
-      const keep = new Set(entries.filter(e => e.agent === 'turnback' && e.kind !== 'probe').flatMap(e => e.ref ?? []));
-      for (const t of turns) if (!expiredIds.has(t.id)) for (const e of t.entries) if (e.ref) keep.add(e.ref);
-      const deleted = new Set(expired.flatMap(t => t.entries.flatMap(e => e.ref && !keep.has(e.ref) ? [e.ref] : [])));
-      // The latest ref is the base of the next snapshot, so it stays even when it is an old probe.
+      const isOwn = (e: Entry) => e.agent === 'turnback' && !!e.ref && e.kind !== 'probe';
+      const own = entries.filter(isOwn);
+      const keep = new Set(own.filter(e => e.kind === 'mark' || Date.parse(e.time) >= cutoff).map(e => e.ref!));
+      // The latest ref is the base of the next snapshot, and restore compares the files with the last
+      // end-of-turn snapshot to spot manual edits, so both stay even when they are old. So do
+      // Turnback's snapshots since the last agent turn: a redo may still need them.
       const latest = this.latestRef();
+      if (latest) keep.add(latest);
+      const lastEnd = entries.findLast(e => (e.kind === 'turn-end' || e.kind === 'post-restore') && e.ref)?.ref;
+      if (lastEnd) keep.add(lastEnd);
+      const lastTurn = entries.findLastIndex(e => e.agent !== 'turnback' && e.kind === 'baseline');
+      for (const e of entries.slice(lastTurn + 1)) if (isOwn(e)) keep.add(e.ref!);
+      for (const t of turns) if (!expiredIds.has(t.id)) for (const e of t.entries) if (e.ref) keep.add(e.ref);
+      const deleted = new Set([...expired.flatMap(t => t.entries), ...own].flatMap(e => e.ref && !keep.has(e.ref) ? [e.ref] : []));
       for (const e of entries) {
         if (e.kind === 'probe' && e.ref && !keep.has(e.ref) && e.ref !== latest && now - Date.parse(e.time) > PROBE_TTL_MS) deleted.add(e.ref);
       }
 
       for (const ref of deleted) this.repo.deleteRef(ref);
+      this.removeLeftovers(now, cutoff);
       if (expired.length) {
         writeFileSync(this.expiredFile, JSON.stringify([...new Set([...this.expiredTurns(), ...expiredIds])]));
       }
@@ -430,6 +442,25 @@ export class Store {
       this.log({ agent: 'turnback', session: 'gc', turn: 'gc', kind: 'gc', status: 'ok', note: `Expired ${expired.length} turns${compacted ? '; packed' : ''}` });
       return { expired: expired.length, deletedRefs: deleted.size, compacted };
     });
+  }
+
+  /**
+   * Turn IDs of sessions that ended long ago (`active-*.json`, see `localTurn`), path lists of an
+   * interrupted git call (`paths-*`), and temporary files of an interrupted ref or object write.
+   * Path lists and temporary files are used within one hook, so an hour old means abandoned.
+   */
+  private removeLeftovers(now: number, cutoff: number): void {
+    const abandoned = now - 60 * 60 * 1000;
+    const remove = (file: string, before: number) => {
+      try { if (statSync(file).mtimeMs < before) unlinkSync(file); } catch { /* removed meanwhile */ }
+    };
+    const list = (dir: string) => { try { return readdirSync(dir); } catch { return []; } };
+    for (const name of list(this.dir)) {
+      if (/^active-.*\.json$/.test(name)) remove(path.join(this.dir, name), cutoff);
+      else if (name.startsWith('paths-') || name.endsWith('.tmp')) remove(path.join(this.dir, name), abandoned);
+    }
+    const refs = path.join(this.repo.gitDir, 'refs', 'turnback', 's');
+    for (const name of list(refs)) if (name.endsWith('.tmp')) remove(path.join(refs, name), abandoned);
   }
 
   private needsCompaction(): boolean {

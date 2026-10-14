@@ -1,6 +1,6 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { isInside, promptLabel, WARM_WAIT_MS, workspaceRoot, workspaceRootForFile } from './config.js';
+import { hookWaitMs, isInside, promptLabel, workspaceRoot, workspaceRootForFile } from './config.js';
 import { turnKey } from './journal.js';
 import { waitForUnlock } from './lock.js';
 import { originFields, Store } from './store.js';
@@ -58,17 +58,27 @@ function recordIn(store: Store, event: HookEvent): Entry | undefined {
   }
 }
 
+/** Notes of steps left unprotected because the turn has no baseline; the end-of-turn warning reads them. */
+export const STILL_WARMING = 'The first snapshot of this workspace was still being written; this step is not protected';
+export const BASELINE_FAILED_EARLIER = 'Baseline failed earlier in this turn; this step is not protected';
+
 function recordChange(store: Store, event: HookEvent, turn: Entry[]): Entry {
   const origin = originFields(event);
-  if (!turn.some(e => e.kind === 'baseline' && e.status === 'ok')) decideMode(store);
+  const hasBaseline = turn.some(e => e.kind === 'baseline' && e.status === 'ok');
+  if (!hasBaseline) {
+    // A baseline that failed once (a broken shadow repo, a held lock) would fail again, and each try
+    // can cost seconds on a large workspace: the rest of the turn goes on without one.
+    if (turn.some(e => e.kind === 'baseline')) {
+      return store.log({ ...origin, kind: event.kind, status: 'unprotected', note: BASELINE_FAILED_EARLIER });
+    }
+    if (!decideMode(store, turn)) return store.log({ ...origin, kind: event.kind, status: 'unprotected', note: STILL_WARMING });
+  }
   const editsOnly = store.mode() === 'edits-only';
 
   if (editsOnly && (event.kind === 'shell' || !event.paths?.length)) {
     return store.log({ ...origin, kind: event.kind, status: 'unprotected', note: 'edits-only mode: only edited paths are snapshotted' });
   }
-  if (!turn.some(e => e.kind === 'baseline' && e.status === 'ok')) {
-    return takeBaseline(store, event, editsOnly);
-  }
+  if (!hasBaseline) return takeBaseline(store, event, editsOnly);
   if (event.kind === 'edit' && (editsOnly || !hadShell(turn))) {
     // Save the result of the previous edit and the content of the paths about to change.
     const previous = turn.findLast(e => e.paths?.length);
@@ -80,22 +90,22 @@ function recordChange(store: Store, event: HookEvent, turn: Entry[]): Entry {
 /**
  * Before a turn's first change the mode must be known: wait for a warm that is still deciding it,
  * and decide it now if this workspace was never warmed. Otherwise a workspace above the edits-only
- * limit would get a full snapshot inside the hook.
+ * limit would get a full snapshot inside the hook. The wait is bounded and happens once per turn:
+ * while warm keeps running, later tool calls of the turn do not wait again. `false` when warm is
+ * still running.
  */
-function decideMode(store: Store): void {
-  waitForUnlock(store.dir, WARM_WAIT_MS);
+function decideMode(store: Store, turn: Entry[]): boolean {
+  const waited = turn.some(e => e.note === STILL_WARMING);
+  if (!waitForUnlock(store.dir, waited ? 0 : hookWaitMs())) return false;
   if (store.mode() === 'full' && !store.latestRef()) store.warm();
+  return true;
 }
 
 function takeBaseline(store: Store, event: HookEvent, editsOnly: boolean): Entry {
   const origin = originFields(event);
   if (editsOnly) return store.snapshot('baseline', origin, event.paths);
 
-  const start = Date.now();
-  const warm = store.waitWarm();
-  if (!warm && Date.now() - start >= WARM_WAIT_MS) {
-    return store.log({ ...origin, kind: event.kind, status: 'unprotected', note: 'Warm baseline exceeded 30 seconds' });
-  }
+  const warm = store.warmRef();
   const baseline = warm
     ? store.log({ ...origin, kind: 'baseline', ref: warm, status: 'ok' })
     : store.snapshot('baseline', origin);

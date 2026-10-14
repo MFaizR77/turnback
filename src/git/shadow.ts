@@ -1,9 +1,9 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { deflateSync } from 'node:zlib';
-import { EXCLUDED_DIRS, importBatchBytes, MAX_FILE_BYTES } from '../core/config.js';
+import { EXCLUDED_DIRS, importBatchBytes, LOCK_STALE_MS, MAX_FILE_BYTES } from '../core/config.js';
 import { blobId } from '../workspace/workspace.js';
 
 export interface NameStatus {
@@ -73,6 +73,19 @@ export class ShadowRepo {
     }
     // Store bytes as they are: this file overrides the project's .gitattributes (text, eol, filters).
     writeFileSync(attributes, RAW_ATTRIBUTES);
+  }
+
+  /**
+   * Remove an `index.lock` that a killed git process left behind; while it exists, every command that
+   * writes the index fails. Index writes happen only under Turnback's workspace lock, so a caller
+   * holding that lock knows no live Turnback process owns this one. A recent lock is kept, in case it
+   * belongs to a git process that outlived a killed hook and is still running.
+   */
+  clearStaleIndexLock(): void {
+    const file = path.join(this.gitDir, 'index.lock');
+    try {
+      if (Date.now() - statSync(file).mtimeMs > LOCK_STALE_MS) unlinkSync(file);
+    } catch { /* no lock */ }
   }
 
   /** Ref whose tree is currently loaded in the index, so `read-tree` can be skipped. */
@@ -329,7 +342,7 @@ export class ShadowRepo {
       cwd: this.root,
       encoding: 'utf8',
       input,
-      timeout: args[0] === 'add' || args[0] === 'fast-import' ? 180_000 : 30_000,
+      timeout: ['add', 'fast-import', 'gc'].includes(args[0]) ? 180_000 : 30_000,
       maxBuffer: 64 * 1024 * 1024,
       windowsHide: true,
     });
@@ -358,6 +371,12 @@ export class ShadowRepo {
     return [
       `--git-dir=${this.gitDir}`, `--work-tree=${this.root}`,
       '-c', 'core.autocrlf=false', '-c', 'core.longpaths=true',
+      // Documents, images, and archives are compressed already, and source files stay small at any
+      // level: the fastest zlib level made a 670 MB first snapshot 2.7 times as fast for the same
+      // size (35 s to 13 s, together with the unpack limit). fast-import
+      // would store a batch of fewer than 100 objects (a few large files) as loose objects, which gc
+      // then has to pack again under the lock.
+      '-c', 'core.compression=1', '-c', 'fastimport.unpackLimit=1',
       // Patches must stay appliable whatever the user's global config says.
       '-c', 'color.ui=never', '-c', 'diff.noprefix=false', '-c', 'diff.mnemonicPrefix=false',
       '-c', 'user.name=Turnback', '-c', 'user.email=turnback@localhost', '-c', 'user.useConfigOnly=false',

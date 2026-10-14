@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, it } from 'vitest';
-import { diskUsage, prunable, pruneWorkspaces } from '../src/core/du.js';
+import { autoClean, diskUsage, prunable, pruneWorkspaces } from '../src/core/du.js';
 import { workspaceDataDir } from '../src/core/config.js';
 import { Store } from '../src/core/store.js';
 import { CLI, hook, tempDir, tempProject } from './helpers.js';
@@ -135,4 +135,36 @@ it('hints where an unknown workspace was from the files it recorded', () => {
   const store = new Store(p.root);
   rmSync(path.join(workspaceDataDir(store.root), 'workspace.json'));
   expect(diskUsage(p.home)[0]).toMatchObject({ root: undefined, near: path.dirname(path.join(p.root, 'a.txt')) });
+});
+
+it('cleans every workspace once a day: gc where due, and drops data of workspaces gone for 30 days', () => {
+  const p = tempProject('turnback-du-auto-');
+  oneTurn(p.root);
+  const other = tempDir('turnback-du-auto-other-');
+  oneTurn(other);
+  const otherStore = new Store(other);
+  const gone = tempDir('turnback-du-auto-gone-');
+  oneTurn(gone);
+  const goneDir = workspaceDataDir(new Store(gone).root);
+  rmSync(gone, { recursive: true, force: true });
+
+  // Gone for less than 30 days: kept, so `turnback recover` can still bring files back.
+  expect(autoClean(p.home)).toEqual({ collected: 2, removed: 0 });
+  expect(existsSync(goneDir)).toBe(true);
+  expect(otherStore.entries().filter(e => e.kind === 'gc')).toHaveLength(1);
+  expect(autoClean(p.home)).toBeUndefined();
+
+  const later = Date.now() + 31 * DAY;
+  expect(autoClean(p.home, later)).toEqual({ collected: 2, removed: 1 });
+  expect(existsSync(goneDir)).toBe(false);
+  expect(new Store(p.root).turns()).toHaveLength(1);
+  expect(otherStore.turns()).toHaveLength(1);
+});
+
+it('does not clean other workspaces when autoClean is off', () => {
+  const p = tempProject('turnback-du-auto-off-');
+  oneTurn(p.root);
+  writeFileSync(path.join(p.home, 'config.json'), JSON.stringify({ autoClean: false }));
+  expect(autoClean(p.home)).toBeUndefined();
+  expect(new Store(p.root).entries().filter(e => e.kind === 'gc')).toHaveLength(0);
 });

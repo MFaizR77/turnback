@@ -32,16 +32,24 @@ export function withLock<T>(dir: string, timeoutMs: number, fn: () => T): T {
   }
 }
 
-/** Wait until nobody holds the lock, or the timeout expires. */
-export function waitForUnlock(dir: string, timeoutMs: number): void {
+/** Wait until nobody holds the lock, or the timeout expires; `false` on timeout. A stale lock counts as free. */
+export function waitForUnlock(dir: string, timeoutMs: number): boolean {
   const file = lockFile(dir);
   const start = Date.now();
-  while (existsSync(file) && Date.now() - start < timeoutMs) sleep(50);
+  for (;;) {
+    if (!existsSync(file) || isStale(file)) return true;
+    if (Date.now() - start >= timeoutMs) return false;
+    sleep(50);
+  }
+}
+
+function isStale(file: string): boolean {
+  try { return Date.now() - statSync(file).mtimeMs > LOCK_STALE_MS; } catch { return true; }
 }
 
 function removeIfStale(file: string): boolean {
   try {
-    if (Date.now() - statSync(file).mtimeMs <= LOCK_STALE_MS) return false;
+    if (!isStale(file)) return false;
     unlinkSync(file);
     return true;
   } catch {

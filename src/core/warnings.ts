@@ -1,7 +1,7 @@
 import path from 'node:path';
 import { userConfig } from './config.js';
 import { turnKey } from './journal.js';
-import { hadShell } from './recorder.js';
+import { hadShell, STILL_WARMING } from './recorder.js';
 import { Store } from './store.js';
 import type { HookEvent } from './types.js';
 
@@ -10,15 +10,16 @@ export const DEFAULT_WARN_DELETES = 20;
 export const SENSITIVE = /^(\.env(?!\.(example|sample|template)$)(\..+)?|id_(rsa|dsa|ecdsa|ed25519)|.+\.(pem|key|p12|pfx|jks|keystore)|credentials(\.json)?|\.npmrc|\.netrc|\.git-credentials)$/i;
 
 /**
- * A one-line warning for a finished turn that deleted many files, changed secrets, or edited other
- * workspaces; undefined when there is nothing to say. Only reads the shadow repo.
+ * A one-line warning for a finished turn that deleted many files, changed secrets, edited other
+ * workspaces, or could not be saved; undefined when there is nothing to say. Only reads the shadow repo.
  */
 export function turnWarning(event: HookEvent, foreignRoots: string[]): string | undefined {
   const config = userConfig();
   if (config.warnings === false) return undefined;
   const store = new Store(event.cwd);
   const turn = store.findTurn(turnKey(event));
-  if (!turn?.end) return undefined;
+  if (!turn) return unsavedWarning(store, event);
+  if (!turn.end) return undefined;
 
   // Without a shell command, the end snapshot covers only the edited paths (see `endTurn`), so the
   // turn changed nothing else. Too few of them to reach the delete limit and none that looks like a
@@ -36,4 +37,19 @@ export function turnWarning(event: HookEvent, foreignRoots: string[]): string | 
   if (foreignRoots.length) parts.push(`edited files outside this workspace (${foreignRoots.join(', ')})`);
   if (!parts.length) return undefined;
   return `turnback: this turn ${parts.join('; ')}. Review with \`turnback undo --dry-run\` or /turnback:undo.`;
+}
+
+/**
+ * A turn that changed files without a baseline cannot be undone. Without this warning the user finds
+ * out only when an undo fails, possibly after many such turns. Steps that edits-only mode leaves
+ * unprotected by design are not a reason to warn.
+ */
+function unsavedWarning(store: Store, event: HookEvent): string | undefined {
+  const entries = store.entries().filter(e => turnKey(e) === turnKey(event));
+  const failed = entries.find(e => e.kind === 'baseline' && e.status !== 'ok');
+  const reason = failed ? (failed.note ?? failed.status).split('\n')[0].slice(0, 160)
+    : entries.some(e => e.note === STILL_WARMING) ? 'the first snapshot of this workspace was still being written'
+    : undefined;
+  if (!reason) return undefined;
+  return `turnback: this turn's changes could not be saved, so it cannot be undone (${reason}). Run \`turnback status\` for details.`;
 }

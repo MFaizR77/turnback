@@ -10,7 +10,7 @@ import { exportCommit, exportPatch } from '../core/export.js';
 import { compareTurns } from '../core/compare.js';
 import { htmlReport, prReport, sessionOf, sessionReport, withPrSection } from '../core/report.js';
 import { formatStats, statsCard, turnStats } from '../core/stats.js';
-import { compactWorkspaces, diskUsage, prunable, pruneWorkspaces } from '../core/du.js';
+import { autoClean, compactWorkspaces, diskUsage, prunable, pruneWorkspaces } from '../core/du.js';
 import { formatBlame, formatBytes, formatConfigFiles, formatDiskUsage, formatMarks, formatPlan, formatRecoverTarget, formatRestoreResult, formatStatus, formatSteps, formatTime, formatTurns } from '../core/format.js';
 import { install, uninstall } from '../agents/install.js';
 import { shellArg } from '../core/quote.js';
@@ -235,6 +235,7 @@ async function main(): Promise<void> {
     case 'warm':
       store.warm();
       store.gcIfDue();
+      autoClean();
       return;
     case 'install':
       output(configFiles(args, 'Installed Turnback in',

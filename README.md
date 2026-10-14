@@ -105,7 +105,7 @@ The hook before a mutating tool takes the turn baseline. The hook before a shell
 
 Tracked, untracked, and gitignored files up to 5 MB are covered. Build output and dependency directories are excluded. Extra rules use gitignore syntax in `.turnbackignore`; global rules go in `~/.turnback/config.json` as `{"exclude":["pattern"]}`.
 
-Workspaces above 100k files or 2 GB switch to `edits-only` mode: only paths touched by edit tools are snapshotted, shell commands are recorded as `unprotected`, and restore touches only recorded paths. Turns older than 7 days and outside the last 50 turns are cleaned up automatically, at most once a day.
+Workspaces above 100k files or 2 GB switch to `edits-only` mode: only paths touched by edit tools are snapshotted, shell commands are recorded as `unprotected`, and restore touches only recorded paths. Turns older than 7 days and outside the last 50 turns are cleaned up automatically, at most once a day, in every workspace and not only the one in use. Data of a workspace that was deleted is removed after 30 idle days; set `{"autoClean": false}` in `~/.turnback/config.json` to keep it.
 
 ## Contributing
 

@@ -27,9 +27,8 @@ it('writes the first snapshot as one pack instead of loose objects', () => {
   writeFiles(150);
   const store = new Store(p.root);
   expect(store.warm().status).toBe('ok');
-  // Only the commit and trees may be written outside the pack, never one object per file.
-  expect(objects(store)).toMatchObject({ packs: 1 });
-  expect(objects(store).loose).toBeLessThan(5);
+  // One pack for the files, one for the commit and trees; never one loose object per file.
+  expect(objects(store)).toEqual({ packs: 2, loose: 0 });
 });
 
 it('restores unusual file names and modes from the first snapshot', () => {

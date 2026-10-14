@@ -15,7 +15,12 @@ export const importBatchBytes = () => Number(process.env.TURNBACK_IMPORT_BATCH_B
 
 export const LOCK_TIMEOUT_MS = 30_000;
 export const LOCK_STALE_MS = 60_000;
-export const WARM_WAIT_MS = 30_000;
+/**
+ * Longest a hook waits, once per turn, for a background warm that is still writing the first
+ * snapshot. It stays well under the agents' hook timeout (30 s), so a hook is never killed while it
+ * holds the lock. Overridable for tests.
+ */
+export const hookWaitMs = () => Number(process.env.TURNBACK_HOOK_WAIT_MS || 10_000);
 export const GC_INTERVAL_MS = 24 * 60 * 60 * 1000;
 export const RETENTION = { days: 7, turns: 50 };
 /** Daily gc packs the shadow repo once loose objects pass either limit, or when an interrupted write left garbage. */
@@ -44,6 +49,8 @@ export interface UserConfig {
   warnings?: boolean;
   /** Warn when a turn deletes at least this many files. */
   warnDeletes?: number;
+  /** `false` stops the daily cleanup of other workspaces' data (see `autoClean`). */
+  autoClean?: boolean;
 }
 
 /** `~/.turnback/config.json`; a missing, unreadable, or malformed file or field means defaults. */
@@ -51,12 +58,13 @@ export function userConfig(): UserConfig {
   let raw: unknown;
   try { raw = JSON.parse(readFileSync(path.join(dataHome(), 'config.json'), 'utf8')); } catch { return {}; }
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
-  const { exclude, prompts, warnings, warnDeletes } = raw as Record<string, unknown>;
+  const { exclude, prompts, warnings, warnDeletes, autoClean } = raw as Record<string, unknown>;
   return {
     exclude: Array.isArray(exclude) ? exclude.filter((p): p is string => typeof p === 'string') : undefined,
     prompts: typeof prompts === 'boolean' ? prompts : undefined,
     warnings: typeof warnings === 'boolean' ? warnings : undefined,
     warnDeletes: typeof warnDeletes === 'number' && warnDeletes > 0 ? warnDeletes : undefined,
+    autoClean: typeof autoClean === 'boolean' ? autoClean : undefined,
   };
 }
 

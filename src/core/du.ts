@@ -1,9 +1,9 @@
-import { existsSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { dataHome, LOCK_TIMEOUT_MS, UNKNOWN_IDLE_DAYS, WORKSPACE_FILE } from './config.js';
+import { dataHome, GC_INTERVAL_MS, LOCK_TIMEOUT_MS, UNKNOWN_IDLE_DAYS, userConfig, WORKSPACE_FILE } from './config.js';
 import { withLock } from './lock.js';
 import { Journal, turnKey } from './journal.js';
-import { directorySize } from './store.js';
+import { directorySize, Store } from './store.js';
 import { ShadowRepo } from '../git/shadow.js';
 
 export interface WorkspaceUsage {
@@ -91,4 +91,34 @@ export function compactWorkspaces(list: WorkspaceUsage[]): { packed: number; bef
     after += directorySize(u.dir);
   }
   return { packed, before, after };
+}
+
+/** In TURNBACK_HOME: `{ "time": <ms> }` of the last `autoClean`. */
+const CLEANUP_FILE = 'cleanup.json';
+
+/**
+ * Once a day, from the background warm: run the daily gc of every workspace, not only the one in use,
+ * so turns of a project left alone for weeks expire too. Data of a workspace that was deleted, or
+ * of an unknown one, is removed once idle for 30 days; until then `turnback recover` can still bring
+ * its files back. Turned off with `"autoClean": false` in config.json. `undefined` when it did not run.
+ */
+export function autoClean(home = dataHome(), now = Date.now()): { collected: number; removed: number } | undefined {
+  if (userConfig().autoClean === false) return undefined;
+  const marker = path.join(home, CLEANUP_FILE);
+  try {
+    if (now - JSON.parse(readFileSync(marker, 'utf8')).time < GC_INTERVAL_MS) return undefined;
+  } catch { /* never ran */ }
+  // Written first, so warms of other sessions started meanwhile skip the cleanup.
+  mkdirSync(home, { recursive: true });
+  writeFileSync(marker, JSON.stringify({ time: now }));
+
+  const cutoff = now - UNKNOWN_IDLE_DAYS * 24 * 60 * 60 * 1000;
+  const list = diskUsage(home);
+  const idle = list.filter(u => !u.exists && (!u.lastActivity || Date.parse(u.lastActivity) < cutoff));
+  let collected = 0;
+  for (const u of list) {
+    if (!u.exists || !u.root) continue;
+    try { if (new Store(u.root).gcIfDue(now)) collected++; } catch { /* busy; tried again tomorrow */ }
+  }
+  return { collected, removed: pruneWorkspaces(idle).removed };
 }
