@@ -111,9 +111,11 @@ export function createServer(): McpServer {
       const rel = store.workspace.relative(abs)!;
       if (!found) throw new Error(`No snapshot has a version of ${rel} that differs from the file on disk`);
       const turn = found.turn && store.summarize(found.turn, []);
+      const before = found.entry.kind === 'baseline' ? 'just before ' : '';
+      const from = turn ? `${before}turn "${turn.prompt ?? turn.id}" (${turn.agent})` : `the snapshot of ${found.entry.time}`;
       return result(
         { target: found.ref, paths: found.paths, time: found.entry.time, turn: turn && { id: turn.id, agent: turn.agent, time: turn.time, prompt: turn.prompt } },
-        `Found a version of ${formatRecoverTarget(rel, found.paths)} from ${turn ? `${found.entry.kind === 'baseline' ? 'just before ' : ''}turn "${turn.prompt ?? turn.id}" (${turn.agent})` : `the snapshot of ${found.entry.time}`}. Call restore with target ${found.ref} and paths ${JSON.stringify(found.paths)} to preview bringing it back.`,
+        `Found a version of ${formatRecoverTarget(rel, found.paths)} from ${from}. Call restore with target ${found.ref} and paths ${JSON.stringify(found.paths)} to preview bringing it back.`,
       );
     } catch (e) { return failure(e); }
   });

@@ -44,7 +44,8 @@ function splitLines(content: Buffer): string[] {
 /**
  * Who last wrote each line of a text file: a turn, nobody since Turnback started recording (`before`),
  * or a change between turns (`outside`). Versions run baseline → end of each turn that changed the
- * file, oldest first, then the file on disk.
+ * file, oldest first, then the file on disk. A change outside a turn that returns the file to an
+ * earlier version (an undo, a recover, a manual revert) gets that version's labels back.
  */
 export function blameFile(store: Store, absPath: string): BlameLine[] {
   const rel = store.workspace.relative(absPath);
@@ -68,25 +69,15 @@ export function blameFile(store: Store, absPath: string): BlameLine[] {
   const repo = store.repo;
   const refs = [...new Set(store.entries().flatMap(e => e.status === 'ok' && e.ref ? [e.ref] : []))];
   const found = refs.length ? repo.lookup(refs, rel) : new Map<string, { exists: boolean; oid?: string }>();
-  // The file as it was when Turnback started recording it. In edits-only mode a snapshot holds only
-  // the paths edited so far, so recording of this file starts with the first snapshot that has it.
-  const editsOnly = store.mode() === 'edits-only';
-  const first = refs.find(ref => found.get(ref)?.exists && (!editsOnly || found.get(ref)?.oid));
-  // Nothing recorded yet (and maybe no shadow repo): every line predates Turnback.
+  const first = firstRecorded(store, refs, found);
   if (!first) return lines.map((text, i) => ({ line: i + 1, text, source: 'before' }));
 
   const empty = repo.writeBlob(Buffer.alloc(0));
   const oidAt = (ref: string) => found.get(ref)?.oid ?? empty;
-  // Finished turns only: an unfinished turn has no end snapshot, so its changes count as outside.
-  const turns = store.turns().reverse().flatMap(turn => {
-    const end = turn.entries.findLast(e => e.kind === 'turn-end' && e.status === 'ok' && e.ref)?.ref;
-    return end && oidAt(turn.baseline) !== oidAt(end) ? [{ summary: store.summarize(turn, []), baseline: turn.baseline, end }] : [];
-  });
+  const turns = turnsChangingFile(store, oidAt);
 
   let current = oidAt(first);
   let labels = splitLines(repo.blob(current)).map(() => BEFORE);
-  // Labels of every version seen so far: a change outside a turn that returns the file to an earlier
-  // version (an undo, a recover, a manual revert) gets that version's labels back.
   const seen = new Map([[current, labels]]);
   const step = (next: string, label: Label) => {
     if (next === current) return;
@@ -106,5 +97,22 @@ export function blameFile(store: Store, absPath: string): BlameLine[] {
   return lines.map((text, i) => {
     const label = labels[i];
     return label.source === 'turn' ? { line: i + 1, text, source: 'turn', turn: label.turn } : { line: i + 1, text, source: label.source };
+  });
+}
+
+/**
+ * The first snapshot that recorded the file, or undefined when nothing has (every line predates
+ * Turnback). In edits-only mode a snapshot holds only the paths edited so far, so it must have the file.
+ */
+function firstRecorded(store: Store, refs: string[], found: Map<string, { exists: boolean; oid?: string }>): string | undefined {
+  const editsOnly = store.mode() === 'edits-only';
+  return refs.find(ref => found.get(ref)?.exists && (!editsOnly || found.get(ref)?.oid));
+}
+
+/** Finished turns that changed the file, oldest first; an unfinished turn's changes count as outside. */
+function turnsChangingFile(store: Store, oidAt: (ref: string) => string) {
+  return store.turns().reverse().flatMap(turn => {
+    const end = turn.entries.findLast(e => e.kind === 'turn-end' && e.status === 'ok' && e.ref)?.ref;
+    return end && oidAt(turn.baseline) !== oidAt(end) ? [{ summary: store.summarize(turn, []), baseline: turn.baseline, end }] : [];
   });
 }

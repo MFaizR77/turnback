@@ -403,11 +403,9 @@ export class Store {
   }
 
   /**
-   * Delete turns older than 7 days that are not among the last 50 turns. Turnback's own snapshots
-   * (warm, the safety snapshots of a restore) expire after the same 7 days, so a workspace that is
-   * warmed every session does not keep each version forever. Marks, the latest snapshot, and refs
-   * still used by kept turns stay. Files left by old sessions and interrupted writes are removed, and
-   * the repo is packed when refs were deleted or loose objects pile up.
+   * Delete turns older than 7 days that are not among the last 50, and Turnback's own snapshots
+   * (warm, restore safety) after the same 7 days, keeping what `refsToKeep` lists. Also removes
+   * leftover files, and packs the repo when refs were deleted or loose objects pile up.
    */
   gc({ now = Date.now(), keepDays = RETENTION.days, keepTurns = RETENTION.turns, compact = false }: GcOptions = {}) {
     return this.locked(() => {

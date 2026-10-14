@@ -67,13 +67,30 @@ const esc = (text: string) => text.replace(/[&<>"']/g, c => ENTITIES[c]);
 
 const isSecret = (p: string) => SENSITIVE.test(p.split('/').at(-1)!);
 
+function diffLineClass(line: string): string {
+  if (line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff ')) return 'meta';
+  if (line.startsWith('+')) return 'add';
+  if (line.startsWith('-')) return 'del';
+  if (line.startsWith('@@')) return 'hunk';
+  return '';
+}
+
 /** One `<span>` per diff line, colored by its first character. */
 function diffHtml(diff: string): string {
   return diff.split('\n').map(line => {
-    const cls = line.startsWith('+++') || line.startsWith('---') || line.startsWith('diff ') ? 'meta'
-      : line.startsWith('+') ? 'add' : line.startsWith('-') ? 'del' : line.startsWith('@@') ? 'hunk' : '';
+    const cls = diffLineClass(line);
     return cls ? `<span class="${cls}">${esc(line)}</span>` : esc(line);
   }).join('\n');
+}
+
+const changeItem = (c: { path: string; status: keyof typeof STATUS }) =>
+  `<li><code>${esc(c.path)}</code> <span class="${c.status}">${STATUS[c.status]}</span>${isSecret(c.path) ? ' (content hidden)' : ''}</li>`;
+
+function diffDetails(diff: string, maxDiff: number, turnId: string): string {
+  const cut = diff.length > maxDiff
+    ? `<p class="meta">Diff cut at ${maxDiff} characters; see <code>turnback diff ${esc(turnId)}</code>.</p>`
+    : '';
+  return `<details><summary>Diff</summary><pre>${diffHtml(diff.slice(0, maxDiff))}</pre>${cut}</details>`;
 }
 
 /** Self-contained HTML report of one session: the markdown report's content plus each turn's diff. */
@@ -85,13 +102,12 @@ export function htmlReport(store: Store, session?: string, maxDiff = MAX_DIFF_CH
     // The page is meant to be shared: never include the contents of files that usually hold secrets.
     const shareable = changes.map(c => c.path).filter(p => !isSecret(p));
     const diff = turn.end && shareable.length ? store.repo.diffPatch(turn.baseline, turn.end, shareable) : '';
-    const cut = diff.length > maxDiff;
     return `<section>
 <h2>${i + 1}. ${esc(prompt ?? '(no prompt)')}</h2>
 <p class="meta">${esc(turn.agent)} · ${esc(formatTime(turn.time))} · ${files(changes.length)}${turn.status === 'ok' ? '' : ' · partial'} · <code>${esc(turn.id)}</code></p>
 ${commands.length ? `<p>Commands: ${commands.map(c => `<code>${esc(c)}</code>`).join(' ')}</p>` : ''}
-${changes.length ? `<ul>${changes.map(c => `<li><code>${esc(c.path)}</code> <span class="${c.status}">${STATUS[c.status]}</span>${isSecret(c.path) ? ' (content hidden)' : ''}</li>`).join('')}</ul>` : ''}
-${diff ? `<details><summary>Diff</summary><pre>${diffHtml(diff.slice(0, maxDiff))}</pre>${cut ? `<p class="meta">Diff cut at ${maxDiff} characters; see <code>turnback diff ${esc(turn.id)}</code>.</p>` : ''}</details>` : ''}
+${changes.length ? `<ul>${changes.map(changeItem).join('')}</ul>` : ''}
+${diff ? diffDetails(diff, maxDiff, turn.id) : ''}
 </section>`;
   });
   return `<!doctype html>

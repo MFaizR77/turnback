@@ -124,7 +124,8 @@ pre.diff span { display: block; padding: 0 14px; white-space: pre; }
     return null;
   }
   function line(before, arg, after) {
-    return arg === null ? null : (before + ' ' + arg + (after ? ' ' + after : ''));
+    if (arg === null) return null;
+    return after ? before + ' ' + arg + ' ' + after : before + ' ' + arg;
   }
   function getJson(url) {
     return fetch(url, { cache: 'no-store' }).then(function (res) {

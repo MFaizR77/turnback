@@ -83,10 +83,7 @@ function buildPlan(store: Store, target: string, selected?: string[]) {
   const lastEndIndex = entries.findLastIndex(e => (e.kind === 'turn-end' || e.kind === 'post-restore') && e.ref);
   const lastEnd = entries[lastEndIndex]?.ref;
   const lastSeen = lastEnd ? store.repo.tree(lastEnd) : new Map<string, TreeItem>();
-  // Paths an edit tool changed since then belong to an agent turn that has not ended: its own work,
-  // not a manual edit. Shell commands name no paths, so what they change is still marked uncertain.
-  const agentEdited = new Set(entries.slice(lastEndIndex + 1).flatMap(e =>
-    e.agent !== 'turnback' && e.paths && (e.kind === 'edit' || e.kind === 'baseline') ? store.relativePaths(e.paths) : []));
+  const agentEdited = agentEditedPaths(store, entries.slice(lastEndIndex + 1));
   const current = new Map<string, FileState>();
   const actions: RestoreAction[] = [];
 
@@ -101,7 +98,7 @@ function buildPlan(store: Store, target: string, selected?: string[]) {
     const seen = lastSeen.get(p);
     actions.push({
       path: p,
-      action: !want ? 'delete' : have ? 'modify' : 'create',
+      action: actionFor(want, have),
       uncertain: !!seen && !!have && !sameFile(seen, have) && !agentEdited.has(p),
     });
   }
@@ -118,6 +115,20 @@ function buildPlan(store: Store, target: string, selected?: string[]) {
     skippedLarge: [...large],
   };
   return { plan, source };
+}
+
+const actionFor = (want: TreeItem | undefined, have: FileState | undefined): RestoreAction['action'] => {
+  if (!want) return 'delete';
+  return have ? 'modify' : 'create';
+};
+
+/**
+ * Paths an edit tool changed since the last end-of-turn snapshot: an unfinished agent turn's own work,
+ * not a manual edit. Shell commands name no paths, so what they change is still marked uncertain.
+ */
+function agentEditedPaths(store: Store, since: Entry[]): Set<string> {
+  return new Set(since.flatMap(e =>
+    e.agent !== 'turnback' && e.paths && (e.kind === 'edit' || e.kind === 'baseline') ? store.relativePaths(e.paths) : []));
 }
 
 /**
@@ -213,7 +224,8 @@ export interface Recoverable {
 /**
  * Newest snapshot holding a version of `absPath` that differs from the file on disk:
  * for a deleted file, the last snapshot that still had it. For a folder, the newest snapshot
- * with files that are missing or different on disk, and only those files.
+ * with files that are missing or different on disk, and only those files: files added since are
+ * left alone, never the whole folder restored.
  */
 export function findRecoverable(store: Store, absPath: string): Recoverable | undefined {
   const rel = store.workspace.relative(absPath);
@@ -238,8 +250,6 @@ export function findRecoverable(store: Store, absPath: string): Recoverable | un
     return undefined;
   }
 
-  // A folder: the newest snapshot with files that are missing or different on disk. Files added
-  // since are left alone, so only those files are restored, never the whole folder.
   const seen = new Set<string>();
   for (const [ref, entry] of newest) {
     const tree = found.get(ref)?.tree;

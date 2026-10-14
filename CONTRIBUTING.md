@@ -36,11 +36,11 @@ These come from what Turnback promises its users. A change that breaks one needs
 
 - **Small, named functions over commented blocks.** If a block inside a function needs a comment to be understood, move it into a function whose name says what it does, and put the reason in that function's doc comment.
 - **No multi-line comments inside function bodies.** A one-line note is fine next to a line that relies on outside behavior the code cannot show, such as "git exits 1 when nothing is ignored".
-- **Doc comments say what and why, in one or two lines (four at most).** State what the function returns and when it returns `undefined` or `false`, plus any reason a reader could not get from the code. Do not narrate the steps.
+- **Doc comments say what and why, in one or two lines (four at most).** State what the function returns and when it returns `undefined` or `false`, plus any reason a reader could not get from the code. Do not narrate the steps. A module's entry point, such as `record` in `recorder.ts`, may list the rules it applies.
 - **Comments explain why, not what.** History, benchmarks, and "used to be" notes belong in the commit message or the PR.
 - **Constants and types at the top of the file**, not between functions.
 - **Repeated expressions become a helper** once they appear three times.
-- **No nested ternaries.** Use `if` with early returns.
+- **No ternary inside another on one line.** Use `if` with early returns, or a small helper. A chain with one case per line is fine.
 
 ## Pull requests
 

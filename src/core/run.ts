@@ -67,12 +67,14 @@ export function changedFiles(cwd: string, turn: string): { index: number; files:
 /** Characters cmd.exe treats specially, escaped with `^` (the rule cross-spawn uses). */
 const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
 
-/** Quote one argument for the shell Node uses with `shell: true`: cmd.exe on Windows, sh elsewhere. */
+/**
+ * Quote one argument for the shell Node uses with `shell: true`: cmd.exe on Windows, sh elsewhere. On
+ * Windows the argument is quoted for the program's parser, then every cmd.exe metacharacter is
+ * escaped, quotes included, so `%VAR%` is never expanded.
+ */
 export function quoteForShell(arg: string, platform = process.platform): string {
   if (platform !== 'win32') return /^[\w@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replaceAll("'", `'\\''`)}'`;
   if (/^[\w@+=:,./\\-]+$/.test(arg)) return arg;
-  // Quote for the program's argument parser (backslashes before a quote are doubled),
-  // then escape every cmd.exe metacharacter, quotes included, so `%VAR%` is never expanded.
   const quoted = `"${arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, '$1$1')}"`;
   return quoted.replace(CMD_META, '^$1');
 }

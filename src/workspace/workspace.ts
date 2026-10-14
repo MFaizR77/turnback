@@ -108,7 +108,7 @@ export class Workspace {
     const abs = this.abs(rel);
     try {
       const content = st.isSymbolicLink() ? Buffer.from(readlinkSync(abs)) : readFileSync(abs);
-      return { content, mode: st.isSymbolicLink() ? '120000' : st.mode & 0o111 ? '100755' : '100644' };
+      return { content, mode: gitMode(st) };
     } catch {
       return undefined;
     }
@@ -121,4 +121,9 @@ export function blobId(content: Buffer, oidLength = 40): string {
     .update(`blob ${content.length}\0`)
     .update(content)
     .digest('hex');
+}
+
+function gitMode(st: Stats): string {
+  if (st.isSymbolicLink()) return '120000';
+  return st.mode & 0o111 ? '100755' : '100644';
 }

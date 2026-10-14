@@ -137,7 +137,8 @@ function runRestore(store: Store, operation: Operation, args: Args): void {
     : args.positional[0];
   if (!target) throw new Error(operation === 'restore' ? 'Missing target turn or snapshot' : `Nothing to ${operation}`);
   const paths = args.paths.length ? args.paths : undefined;
-  const turn = operation === 'redo' ? undefined : store.findTurn(step !== undefined ? args.positional[0] ?? '' : target);
+  const turnId = step !== undefined ? args.positional[0] ?? '' : target;
+  const turn = operation === 'redo' ? undefined : store.findTurn(turnId);
   applyPlan(store, operation, target, paths, planTitle(store, operation, target, args.positional[0], step), args, isAgentTurn(turn));
 }
 
@@ -269,7 +270,8 @@ async function main(): Promise<void> {
       const target = args.positional[0];
       if (!target) throw new Error('Missing file or folder');
       const history = store.fileHistory(path.resolve(target));
-      output(args.flags.has('--json') ? history : history.length ? formatTurns(history) : `No recorded turn changed ${target}.`);
+      if (args.flags.has('--json')) output(history);
+      else output(history.length ? formatTurns(history) : `No recorded turn changed ${target}.`);
       return;
     }
     case 'mark': {
@@ -312,7 +314,8 @@ async function main(): Promise<void> {
     }
     case 'search': {
       const turns = store.searchTurns(args.positional.join(' '));
-      output(args.flags.has('--json') ? turns : turns.length ? formatTurns(turns) : 'No matching turns.');
+      if (args.flags.has('--json')) output(turns);
+      else output(turns.length ? formatTurns(turns) : 'No matching turns.');
       return;
     }
     case 'compare': {
@@ -392,7 +395,8 @@ async function main(): Promise<void> {
         return;
       }
       const mark = store.marks().find(m => m.ref === found.ref);
-      const from = found.turn ? `${found.entry.kind === 'baseline' ? 'just before ' : ''}${describeTurn(found.turn)}`
+      const before = found.entry.kind === 'baseline' ? 'just before ' : '';
+      const from = found.turn ? `${before}${describeTurn(found.turn)}`
         : mark ? `mark ${JSON.stringify(mark.label)}`
         : `the snapshot of ${formatTime(found.entry.time)}`;
       const what = formatRecoverTarget(store.workspace.relative(abs)!, found.paths);

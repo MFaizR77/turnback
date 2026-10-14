@@ -127,7 +127,13 @@ export function formatBlame(lines: BlameLine[], numbers: Map<string, number>): s
 
 /** What `recover` brings back: `src/app.ts` for a file, `src/ (3 files)` for a folder. */
 export function formatRecoverTarget(rel: string, paths: string[]): string {
-  return paths.length === 1 && paths[0] === rel ? rel : `${rel}/ (${paths.length} ${paths.length === 1 ? 'file' : 'files'})`;
+  return paths.length === 1 && paths[0] === rel ? rel : `${rel}/ (${plural(paths.length, 'file')})`;
+}
+
+function workspaceLabel(u: WorkspaceUsage): string {
+  if (u.root) return u.exists ? u.root : `${u.root} (no longer exists)`;
+  if (u.near) return `(unknown workspace, has files in ${u.near})`;
+  return '(unknown workspace)';
 }
 
 /** `turnback du`: every workspace's data, largest first, with what can be freed. */
@@ -139,7 +145,7 @@ export function formatDiskUsage(home: string, list: WorkspaceUsage[], prunable: 
   const sizes = list.map(u => formatBytes(u.bytes));
   const width = Math.max(...sizes.map(s => s.length));
   list.forEach((u, i) => {
-    const where = u.root ? (u.exists ? u.root : `${u.root} (no longer exists)`) : u.near ? `(unknown workspace, has files in ${u.near})` : '(unknown workspace)';
+    const where = workspaceLabel(u);
     const extra = [plural(u.turns, 'turn'), u.lastActivity ? `last used ${u.lastActivity.slice(0, 10)}` : '',
       u.garbageBytes ? `${formatBytes(u.garbageBytes)} reclaimable` : ''].filter(Boolean).join(' · ');
     lines.push(`  ${sizes[i].padStart(width)}  ${where}  ${extra}`);
