@@ -17,7 +17,7 @@ Config locations:
 | OpenCode | `.opencode/plugins/turnback.js` | `~/.config/opencode/plugins/turnback.js` | `mcp` in `opencode.json` / `~/.config/opencode/opencode.json` (an existing `opencode.jsonc` is used instead) |
 | Antigravity CLI | `.agents/hooks.json` | `~/.gemini/config/hooks.json` | `~/.gemini/config/mcp_config.json` (user level only) |
 
-## Codex plugin: local testing before release
+## Codex plugin: local testing
 
 This checkout includes a Codex plugin with hooks, the stdio MCP server, and the
 shared `undo`, `turns`, `diff-turn`, and `report` skills. Its manifest is
@@ -25,9 +25,8 @@ shared `undo`, `turns`, `diff-turn`, and `report` skills. Its manifest is
 continues to use `hooks/hooks.json`. Tested with Codex CLI 0.160.1. Node.js 22+
 and Git 2.25+ are required.
 
-The existing npm 0.9.0 does not contain the Codex plugin. The public Codex
-marketplace entry is marked `NOT_AVAILABLE` until a new npm release includes
-it. To test the current code from a clone:
+The published plugin (`codex plugin add turnback@turnback`) installs Turnback
+0.9.1 or later from npm. To test the current code from a clone instead:
 
 ```bash
 npm ci

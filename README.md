@@ -45,7 +45,7 @@ codex plugin add turnback@turnback
 
 Start a new session, review and trust Turnback's hooks in `/hooks`, then use `$turnback:turns`, `$turnback:diff-turn`, `$turnback:undo`, and `$turnback:report`.
 
-The published 0.9.0 package uses the installer below. To try the Codex plugin from this checkout before release, see [local testing](guide/INSTALL.md#codex-plugin-local-testing-before-release).
+The plugin needs Turnback 0.9.1 or later. To try unreleased plugin changes from a checkout, see [local testing](guide/INSTALL.md#codex-plugin-local-testing).
 
 For Codex, Cursor, Gemini CLI, OpenCode, Antigravity CLI, or the CLI on its own (Node.js 22+ and Git 2.25+):
 
@@ -142,7 +142,7 @@ From a clone, run `npm ci && npm run build` and use `node dist/cli.js` in place 
 
 Set the same version in `package.json` and in both version fields of `server.json`, commit, then push a `v<version>` tag. The `Publish` workflow checks that the versions match, runs the tests, publishes to npm through trusted publishing (provenance is attached automatically), and publishes `server.json` to the MCP registry as `io.github.MFaizR77/turnback`.
 
-Also update `src/core/config.ts`, both plugin manifests, and the npm ranges in `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json`. For the first release containing Codex support, set the Codex marketplace range to that new version and change its installation policy to `AVAILABLE`.
+Also update `src/core/config.ts`, both plugin manifests, and the npm ranges in `.claude-plugin/marketplace.json` and `.agents/plugins/marketplace.json`.
 
 npm trusted publishing is configured on the package page at npmjs.com (repository `MFaizR77/turnback`, workflow `publish.yml`), which needs the package to exist. The first version is therefore published once by hand with `npm publish --access public`; pushing its tag afterwards skips npm (the version exists) and only publishes to the MCP registry. Later tags do both.
 
